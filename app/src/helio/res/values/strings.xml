@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- pebble_content_provider: generated from the applicationId in app/build.gradle (resValue) -->
+    <!-- Project links in the About screen: Ritmo, a fork of Gadgetbridge -->
+    <string name="homepage_url" translatable="false">Homepage: <a href="https://github.com/compassionee/ritmo">https://github.com/compassionee/ritmo</a></string>
+    <string name="codeberg_url" translatable="false">Code: <a href="https://github.com/compassionee/ritmo">https://github.com/compassionee/ritmo</a></string>
+    <string name="fdroid_url" translatable="false">Based on Gadgetbridge: <a href="https://codeberg.org/Freeyourgadget/Gadgetbridge">https://codeberg.org/Freeyourgadget/Gadgetbridge</a></string>
+    <string translatable="false" name="app_name">Ritmo</string>
+    <string translatable="false" name="title_activity_controlcenter">@string/title_activity_controlcenter_generic</string>
+    <string translatable="false" name="about_activity_title">@string/about_activity_title_generic</string>
+    <string translatable="false" name="about_description">@string/about_description_generic</string>
+    <string translatable="false" name="gadgetbridge_running">@string/gadgetbridge_running_generic</string>
+    <string translatable="false" name="helio_app_name">Ritmo</string>
+    <string name="helio_webview_too_old">Ritmo needs a newer version of Android System WebView</string>
+    <string name="helio_no_browser">No browser to open the link</string>
+    <string name="helio_saved">File saved</string>
+    <string name="helio_save_failed">Saving failed</string>
+    <string name="helio_export">Export Ritmo data</string>
+    <string name="helio_import">Import Ritmo data</string>
+    <string name="helio_exported">Ritmo data exported</string>
+    <string name="helio_export_failed">Export failed</string>
+    <string name="helio_import_confirm">The current Ritmo data (labels, plan, weight, strength, nutrition, profile and settings) will be replaced by the data in the archive. The current data is kept in a backup copy. Gadgetbridge data does not change.</string>
+    <string name="helio_import_do">Import</string>
+    <string name="helio_imported">Imported %1$d files. Ritmo closes: open it again to use the new data.</string>
+    <string name="helio_import_failed">Import failed</string>
+    <string name="helio_import_unreadable">The file cannot be read or is larger than 64 MB.</string>
+    <string name="helio_no_band">No band in Gadgetbridge: add it from here</string>
+    <string name="helio_band_connecting">Band disconnected: connecting, then try syncing again</string>
+    <string name="helio_scan_hint">Point the camera at the barcode of the product</string>
+    <string name="helio_scan_cancel">Cancel</string>
+    <string name="helio_catalog_unreadable">The file cannot be read or is larger than 1 GB.</string>
+    <string name="helio_authkey_title">Band auth key</string>
+    <string name="helio_authkey_band">Band: %1$s (%2$s)</string>
+    <string name="helio_authkey_no_band">No band in Gadgetbridge yet: type its MAC address, the key will be ready when you add it.</string>
+    <string name="helio_authkey_mac_hint">MAC address (AA:BB:CC:DD:EE:FF)</string>
+    <string name="helio_authkey_help">Paste or type the key: 32 hexadecimal characters (0–9, a–f), with or without 0x in front.</string>
+    <string name="helio_authkey_hint" translatable="false">0x0123456789abcdef0123456789abcdef</string>
+    <string name="helio_authkey_already_saved">A key is already saved for this band: saving replaces it.</string>
+    <string name="helio_authkey_save">Save</string>
+    <string name="helio_authkey_saved">Key saved for the band</string>
+    <string name="helio_authkey_empty">Type or paste the key.</string>
+    <string name="helio_authkey_bad_characters">The key can contain only 0–9 and a–f (after an optional 0x).</string>
+    <string name="helio_authkey_bad_length">The key must have %1$d hexadecimal characters: this one has %2$d.</string>
+    <string name="helio_authkey_bad_mac">Invalid MAC address: write it as AA:BB:CC:DD:EE:FF.</string>
+    <string name="helio_authkey_save_failed">The key could not be saved.</string>
+</resources>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ritmo: testi delle finestre native in italiano (in values/ quelli in inglese) -->
+    <string name="helio_webview_too_old">Ritmo richiede una versione più recente di Android System WebView</string>
+    <string name="helio_no_browser">Nessun browser per aprire il link</string>
+    <string name="helio_saved">File salvato</string>
+    <string name="helio_save_failed">Salvataggio non riuscito</string>
+    <string name="helio_export">Esporta dati di Ritmo</string>
+    <string name="helio_import">Importa dati di Ritmo</string>
+    <string name="helio_exported">Dati di Ritmo esportati</string>
+    <string name="helio_export_failed">Esportazione non riuscita</string>
+    <string name="helio_import_confirm">I dati attuali di Ritmo (etichette, piano, peso, forza, alimentazione, profilo e impostazioni) verranno sostituiti da quelli dell\'archivio. Quelli attuali restano in una copia di riserva. I dati di Gadgetbridge non cambiano.</string>
+    <string name="helio_import_do">Importa</string>
+    <string name="helio_imported">Importati %1$d file. Ritmo si chiude: riaprilo per usare i nuovi dati.</string>
+    <string name="helio_import_failed">Importazione non riuscita</string>
+    <string name="helio_import_unreadable">Il file non si può leggere o è più grande di 64 MB.</string>
+    <string name="helio_no_band">Nessuna fascia in Gadgetbridge: aggiungila da qui</string>
+    <string name="helio_band_connecting">Fascia scollegata: collegamento in corso, poi riprova a sincronizzare</string>
+    <string name="helio_scan_hint">Inquadra il codice a barre del prodotto</string>
+    <string name="helio_scan_cancel">Annulla</string>
+    <string name="helio_catalog_unreadable">Il file non si può leggere o è più grande di 1 GB.</string>
+    <string name="helio_authkey_title">Chiave di autenticazione della fascia</string>
+    <string name="helio_authkey_band">Fascia: %1$s (%2$s)</string>
+    <string name="helio_authkey_no_band">Nessuna fascia in Gadgetbridge: scrivi il suo indirizzo MAC, la chiave sarà pronta quando la aggiungi.</string>
+    <string name="helio_authkey_mac_hint">Indirizzo MAC (AA:BB:CC:DD:EE:FF)</string>
+    <string name="helio_authkey_help">Incolla o scrivi la chiave: 32 caratteri esadecimali (0–9, a–f), con o senza 0x davanti.</string>
+    <string name="helio_authkey_already_saved">Per questa fascia c\'è già una chiave salvata: salvando la sostituisci.</string>
+    <string name="helio_authkey_save">Salva</string>
+    <string name="helio_authkey_saved">Chiave salvata per la fascia</string>
+    <string name="helio_authkey_empty">Scrivi o incolla la chiave.</string>
+    <string name="helio_authkey_bad_characters">La chiave può contenere solo 0–9 e a–f (dopo un eventuale 0x).</string>
+    <string name="helio_authkey_bad_length">La chiave deve avere %1$d caratteri esadecimali: questa ne ha %2$d.</string>
+    <string name="helio_authkey_bad_mac">Indirizzo MAC non valido: scrivilo come AA:BB:CC:DD:EE:FF.</string>
+    <string name="helio_authkey_save_failed">Non è stato possibile salvare la chiave.</string>
+</resources>

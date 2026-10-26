@@ -57,7 +57,8 @@ public class PebbleContentProvider extends ContentProvider {
 
     @Override
     public Cursor query(@NonNull Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
-        if (uri.equals(CONTENT_URI)) {
+        // The authority depends on the build variant, so only match the path
+        if ("/state".equals(uri.getPath())) {
             MatrixCursor mc = new MatrixCursor(columnNames);
             int connected = 0;
             int pebbleKit = 0;

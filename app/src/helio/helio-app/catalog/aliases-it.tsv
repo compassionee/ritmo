@@ -1,0 +1,351 @@
+# Italian names of common generic foods (USDA FoodData Central, ANSES Ciqual), used by the search.
+# Columns (tab separated): source, id in the source, name, other names (comma separated),
+# portions ("name=grams;name=grams"). Data file in Italian, like static/i18n/it.json.
+ciqual	13039	Mela	mele	1 mela media=180
+ciqual	13037	Pera	pere	1 pera media=170
+ciqual	13005	Banana	banane	1 banana media=120
+ciqual	13089	Banana essiccata	banana secca	
+ciqual	13034	Arancia	arance	1 arancia media=150
+ciqual	13024	Mandarino	mandarini, clementina, clementine	1 mandarino=60
+ciqual	13009	Limone	limoni	
+ciqual	13040	Pompelmo	pompelmi	
+ciqual	13021	Kiwi		1 kiwi=75
+ciqual	13044	Uva bianca	uva	
+ciqual	13045	Uva nera	uva rossa	
+ciqual	13014	Fragole	fragola	
+ciqual	13008	Ciliegie	ciliegia	
+ciqual	13000	Albicocca	albicocche	1 albicocca=40
+ciqual	13001	Albicocche secche	albicocca secca	
+ciqual	13043	Pesca	pesche	1 pesca media=150
+ciqual	13148	Pesca noce	nettarina, nettarine	
+ciqual	13100	Prugna	prugne, susina, susine	
+ciqual	13042	Prugne secche	prugna secca	
+ciqual	13012	Fichi	fico	
+ciqual	13013	Fichi secchi	fico secco	
+ciqual	13036	Anguria	cocomero	
+ciqual	13026	Melone	meloni	
+ciqual	13002	Ananas		
+ciqual	13025	Mango		
+ciqual	13004	Avocado		
+ciqual	13015	Lamponi	lampone	
+ciqual	13028	Mirtilli	mirtillo	
+ciqual	13029	More	mora	
+ciqual	13018	Melograno		
+ciqual	13066	Cachi	caco, loto	
+ciqual	13011	Datteri	dattero	
+ciqual	13046	Uvetta	uva passa	
+ciqual	15020	Castagne lesse	castagne, caldarroste	
+ciqual	15006	Cocco	noce di cocco	
+ciqual	13035	Papaya		
+ciqual	13997	Frutti di bosco	frutti rossi	
+ciqual	13038	Composta di mele	purea di mele	
+ciqual	20385	Pomodoro	pomodori	
+ciqual	20172	Pomodorini	pomodoro ciliegino, ciliegini	
+ciqual	20170	Passata di pomodoro	passata, purea di pomodoro	
+ciqual	20137	Pomodori pelati	pelati	
+ciqual	20068	Concentrato di pomodoro	doppio concentrato	
+ciqual	20031	Lattuga	insalata	
+ciqual	20217	Rucola		
+ciqual	20059	Spinaci	spinacio	
+ciqual	20336	Spinaci cotti	spinaci lessati	
+ciqual	20009	Carota	carote	1 carota media=80
+ciqual	20306	Carote cotte	carote lesse	
+ciqual	20020	Zucchina	zucchine	
+ciqual	20021	Zucchine cotte	zucchine lesse	
+ciqual	20053	Melanzana	melanzane	
+ciqual	20002	Melanzane cotte		
+ciqual	20087	Peperone rosso	peperoni	
+ciqual	20085	Peperone verde		
+ciqual	20168	Peperone giallo		
+ciqual	20019	Cetriolo	cetrioli	
+ciqual	20034	Cipolla	cipolle	
+ciqual	11000	Aglio		1 spicchio=4
+ciqual	4008	Patate	patata	
+ciqual	4003	Patate lesse	patate bollite	
+ciqual	4002	Patate al forno		
+ciqual	4015	Patate in padella	patate saltate	
+ciqual	4032	Patatine fritte	patate fritte	
+ciqual	4101	Patata dolce	patate dolci, batata	
+ciqual	20057	Broccoli	broccolo	
+ciqual	20303	Broccoli cotti	broccoli lessati	
+ciqual	20016	Cavolfiore		
+ciqual	20116	Cavolo cappuccio	cavolo bianco	
+ciqual	20069	Cavolo verza	verza	
+ciqual	20014	Cavolo rosso		
+ciqual	20058	Cavolini di Bruxelles		
+ciqual	20028	Finocchio	finocchi	
+ciqual	20023	Sedano		
+ciqual	20279	Asparagi	asparago	
+ciqual	20052	Carciofi	carciofo	
+ciqual	20010	Funghi champignon	funghi, champignon	
+ciqual	20061	Fagiolini	cornetti	
+ciqual	20030	Fagiolini cotti		
+ciqual	20072	Piselli	pisello	
+ciqual	20066	Mais dolce in scatola	mais, granturco	
+ciqual	20044	Zucca		
+ciqual	20003	Barbabietola cotta	barbabietola, rapa rossa	
+usda_sr	168564	Radicchio		
+usda_sr	169992	Cicoria	cicorie	
+ciqual	20039	Porro	porri	
+ciqual	20045	Ravanelli	ravanello	
+usda_sr	169991	Bietola	bietole, erbette, coste	
+usda_sr	170401	Bietola cotta	bietole lesse	
+ciqual	20346	Cavolo nero	cavolo riccio, kale	
+ciqual	13033	Olive verdi	olive	
+ciqual	13032	Olive nere		
+ciqual	11033	Basilico		
+ciqual	11014	Prezzemolo		
+ciqual	25916	Minestrone	zuppa di verdure	
+ciqual	20501	Fagioli secchi	fagioli borlotti secchi, fagioli cannellini secchi	
+usda_sr	175194	Fagioli cotti	fagioli lessati, fagioli rossi cotti	
+ciqual	20524	Fagioli in scatola	fagioli rossi in scatola	
+ciqual	20516	Ceci secchi		
+usda_sr	173757	Ceci cotti	ceci lessati	
+usda_sr	173800	Ceci in scatola		
+ciqual	20359	Lenticchie secche		
+ciqual	20360	Lenticchie cotte	lenticchie lessate	
+ciqual	20518	Fave secche		
+ciqual	20517	Fave fresche	fave	
+ciqual	20901	Soia secca	fagioli di soia	
+usda_sr	168411	Edamame		
+ciqual	20904	Tofu		
+ciqual	25621	Hummus		
+ciqual	20914	Burger vegetale	hamburger di soia, burger di soia	
+ciqual	25598	Seitan		
+ciqual	20917	Tempeh		
+ciqual	20534	Lupini secchi	lupini	
+ciqual	9810	Pasta secca	pasta, pasta di semola, spaghetti, penne, maccheroni	1 porzione=80
+ciqual	9811	Pasta cotta	pasta lessata, spaghetti cotti	
+ciqual	9870	Pasta integrale	pasta integrale secca	1 porzione=80
+ciqual	9871	Pasta integrale cotta		
+ciqual	9821	Pasta all'uovo secca	pasta all'uovo, tagliatelle, fettuccine	
+ciqual	9822	Pasta all'uovo cotta		
+ciqual	9815	Pasta fresca all'uovo	pasta fresca	
+ciqual	9816	Pasta fresca all'uovo cotta		
+ciqual	9874	Pasta senza glutine		
+ciqual	26264	Gnocchi di patate	gnocchi	
+ciqual	25216	Pasta ripiena cotta	ravioli, tortellini, agnolotti	
+ciqual	25181	Pasta fresca ripiena al formaggio	ravioli al formaggio	
+ciqual	25081	Lasagne alla bolognese	lasagna, cannelloni	
+ciqual	25085	Pasta alla bolognese	spaghetti alla bolognese, pasta al ragù	
+ciqual	25135	Pasta alla carbonara	carbonara, spaghetti alla carbonara	
+ciqual	9100	Riso	riso bianco	1 porzione=80
+ciqual	9104	Riso cotto	riso lessato, riso bollito	
+ciqual	9102	Riso integrale		
+ciqual	9103	Riso integrale cotto		
+ciqual	9119	Riso basmati		
+ciqual	9125	Riso basmati cotto		
+ciqual	9001	Farro		
+ciqual	9321	Orzo perlato	orzo	
+ciqual	9322	Orzo perlato cotto	orzo cotto	
+ciqual	9340	Quinoa		
+ciqual	9683	Cous cous cotto	couscous	
+ciqual	9614	Polenta	farina di mais per polenta	
+ciqual	9615	Polenta cotta		
+ciqual	9545	Farina di mais		
+ciqual	32140	Fiocchi d'avena	avena, farina d'avena	1 porzione=40
+ciqual	9313	Porridge	avena cotta	
+ciqual	32141	Muesli		
+ciqual	32145	Granola		
+ciqual	32014	Corn flakes	cornflakes	
+ciqual	32041	Cereali da colazione	cereali	
+ciqual	7000	Pane	pane bianco, pane comune	1 fetta=30
+ciqual	7111	Pane integrale in cassetta	pane integrale	
+ciqual	7200	Pane in cassetta	pancarrè, pan carrè, toast	1 fetta=25
+ciqual	7106	Pane di segale		
+ciqual	7170	Panino	rosetta, michetta, pane per panini	1 panino=60
+ciqual	7001	Baguette		
+ciqual	7180	Pane pita	pita	
+ciqual	7525	Grissini	grissino	
+ciqual	7351	Crackers	cracker	
+ciqual	7349	Crackers integrali		
+ciqual	7300	Fette biscottate	fetta biscottata	1 fetta=10
+ciqual	7340	Fette biscottate integrali		
+ciqual	7352	Gallette di riso	galletta di riso, gallette	1 galletta=8
+ciqual	7500	Pangrattato	pan grattato	
+ciqual	9436	Farina di grano tenero	farina 00, farina 0, farina	
+ciqual	9415	Farina integrale		
+ciqual	25404	Pizza margherita	pizza	
+ciqual	25516	Pizza farcita		
+ciqual	7815	Tortilla di frumento	wrap	
+ciqual	24000	Biscotti	biscotti secchi	
+ciqual	24049	Biscotti frollini al burro	frollini	
+ciqual	24655	Biscotti all'avena		
+ciqual	7603	Cornetto	croissant, brioche	
+ciqual	7730	Cornetto al cioccolato	croissant al cioccolato	
+ciqual	7746	Brioche	pan brioche	
+ciqual	7719	Panettone		
+ciqual	23594	Pan di Spagna	torta soffice	
+ciqual	23494	Crostata di albicocche	crostata, crostata alla marmellata	
+ciqual	23490	Torta di mele		
+ciqual	23585	Torta al cioccolato		
+usda_sr	167575	Gelato alla crema	gelato, gelato alla vaniglia	
+usda_sr	168809	Gelato al cioccolato		
+ciqual	39524	Sorbetto		
+ciqual	19698	Tiramisù	tiramisu	
+ciqual	19685	Panna cotta		
+usda_sr	168778	Budino al cioccolato	budino	
+ciqual	31074	Cioccolato fondente 70%	cioccolato fondente	
+ciqual	31005	Cioccolato fondente 50%		
+ciqual	31004	Cioccolato al latte		
+ciqual	31010	Cioccolato bianco		
+ciqual	31032	Crema spalmabile alle nocciole	crema di nocciole, crema al cacao	
+ciqual	31016	Zucchero	zucchero bianco, saccarosio	1 cucchiaino=5
+usda_sr	168833	Zucchero di canna	zucchero grezzo	
+ciqual	31008	Miele		1 cucchiaino=7
+ciqual	31037	Marmellata di albicocche	marmellata, confettura	
+ciqual	31024	Marmellata di fragole	confettura di fragole	
+ciqual	30996	Marmellata light	confettura con meno zuccheri	
+ciqual	31059	Caramelle	caramella, lecca lecca	
+ciqual	31034	Sciroppo d'acero		
+ciqual	19024	Latte intero	latte	1 tazza=250
+ciqual	19042	Latte parzialmente scremato	latte ps	1 tazza=250
+ciqual	19051	Latte scremato		1 tazza=250
+ciqual	19060	Latte senza lattosio	latte ad alta digeribilità	
+ciqual	18900	Bevanda di soia	latte di soia	
+ciqual	18899	Bevanda di avena	latte di avena	
+ciqual	18107	Bevanda di mandorla	latte di mandorla	
+ciqual	19593	Yogurt bianco	yogurt, yogurt naturale	1 vasetto=125
+ciqual	19860	Yogurt greco	yogurt greco bianco	1 vasetto=150
+ciqual	19587	Yogurt alla frutta	yogurt con frutta	1 vasetto=125
+ciqual	19865	Kefir		
+usda_sr	170857	Panna da cucina	panna	
+ciqual	19420	Panna montata spray	panna montata	
+ciqual	16400	Burro		1 noce=10
+ciqual	19590	Mozzarella	fior di latte	1 mozzarella=125
+ciqual	19591	Mozzarella di bufala	bufala	
+ciqual	12120	Parmigiano	parmigiano reggiano, grana, grana padano	1 cucchiaio=5
+ciqual	12122	Pecorino		
+ciqual	19585	Ricotta		
+ciqual	12524	Gorgonzola		
+ciqual	12121	Fontina		
+ciqual	12716	Provolone		
+ciqual	12761	Asiago		
+ciqual	12115	Emmental		
+ciqual	12061	Feta		
+usda_sr	173418	Formaggio spalmabile	formaggio cremoso	
+usda_sr	172179	Fiocchi di latte	cottage cheese	
+ciqual	19584	Mascarpone		
+ciqual	12020	Brie		
+ciqual	22000	Uovo	uova, uovo intero	1 uovo=60
+ciqual	22010	Uovo sodo	uova sode	1 uovo=55
+usda_sr	173423	Uovo fritto	uova fritte, uovo all'occhio di bue	
+ciqual	22001	Albume	albume d'uovo, chiara d'uovo	
+ciqual	22002	Tuorlo	tuorlo d'uovo	
+ciqual	22500	Frittata	omelette	
+ciqual	36017	Petto di pollo	pollo, petto di pollo crudo	
+ciqual	36018	Petto di pollo alla griglia	pollo alla griglia, petto di pollo cotto	
+ciqual	36024	Coscia di pollo	cosce di pollo, sovracoscia	
+ciqual	36005	Pollo arrosto		
+ciqual	36036	Cotoletta di pollo	cotoletta, pollo impanato, cotoletta alla milanese	
+ciqual	36027	Crocchette di pollo	nuggets di pollo	
+ciqual	36301	Tacchino		
+ciqual	36304	Fesa di tacchino	petto di tacchino	
+ciqual	6206	Manzo magro	carne di manzo, girello	
+ciqual	6201	Bistecca di manzo	bistecca, fettina di manzo	
+ciqual	6200	Bistecca ai ferri	bistecca alla griglia, bistecca cotta	
+ciqual	6252	Carne macinata di manzo	macinato, macinato di manzo	
+ciqual	6230	Bollito di manzo	bollito, lesso, spezzatino	
+ciqual	25413	Hamburger da fast food	panino con hamburger	
+ciqual	6521	Fettina di vitello	vitello, scaloppina	
+ciqual	28302	Lonza di maiale	maiale, lombata di maiale, carne di maiale	
+ciqual	28451	Arista di maiale al forno	maiale arrosto	
+ciqual	21502	Cosciotto d'agnello	agnello	
+ciqual	34001	Coniglio		
+ciqual	28800	Prosciutto crudo		1 fetta=15
+ciqual	28910	Prosciutto cotto		1 fetta=20
+ciqual	28964	Fesa di tacchino affettata	tacchino affettato	
+ciqual	28503	Bresaola		1 fetta=10
+ciqual	30350	Salame		
+ciqual	30789	Mortadella		
+ciqual	28858	Pancetta		
+ciqual	28501	Pancetta a cubetti	cubetti di pancetta	
+ciqual	30051	Salsiccia	salsicce, salsiccia di maiale	
+ciqual	30134	Würstel	wurstel, frankfurter	
+ciqual	30131	Würstel di pollo	wurstel di pollo	
+usda_sr	171638	Polpette surgelate	polpette, polpette di carne	
+ciqual	26039	Tonno al naturale	tonno in scatola al naturale	
+ciqual	26245	Tonno sott'olio	tonno in scatola, tonno all'olio	
+ciqual	26053	Tonno fresco		
+ciqual	26036	Salmone	salmone fresco	
+ciqual	26037	Salmone affumicato		
+ciqual	26043	Merluzzo	nasello	
+ciqual	26024	Baccalà lessato	baccalà	
+ciqual	26098	Stoccafisso	baccalà secco	
+usda_sr	175142	Branzino	spigola	
+ciqual	26080	Orata		
+ciqual	26058	Sogliola		
+ciqual	27008	Trota		
+ciqual	26051	Sgombro		
+ciqual	26065	Sardine	sarde	
+ciqual	26040	Sardine sott'olio		
+ciqual	26079	Acciughe	alici	
+ciqual	26177	Acciughe sott'olio	filetti di acciuga	
+ciqual	10021	Gamberi	gamberetti, mazzancolle	
+ciqual	10001	Calamari	calamaro	
+ciqual	10018	Polpo		
+ciqual	10016	Seppia	seppie	
+ciqual	10014	Cozze	cozza	
+ciqual	10013	Cozze cotte		
+ciqual	10017	Vongole	vongola	
+usda_sr	174195	Bastoncini di pesce	bastoncini	
+ciqual	26046	Surimi		
+ciqual	17270	Olio extravergine di oliva	olio d'oliva, olio evo, olio	1 cucchiaio=10
+ciqual	17440	Olio di semi di girasole	olio di semi	1 cucchiaio=10
+ciqual	17040	Olio di arachidi		
+ciqual	16590	Margarina		
+ciqual	16520	Strutto		
+ciqual	11054	Maionese		1 cucchiaio=15
+ciqual	11008	Ketchup		
+ciqual	11013	Senape		
+ciqual	11179	Pesto alla genovese	pesto	
+ciqual	11114	Ragù	ragù alla bolognese, sugo di carne	
+ciqual	11107	Sugo al pomodoro	salsa di pomodoro	
+usda_sr	174542	Besciamella		
+ciqual	11018	Aceto	aceto di vino	
+ciqual	11091	Aceto balsamico		
+ciqual	11017	Sale	sale da cucina, sale marino	
+ciqual	11104	Salsa di soia		
+ciqual	11001	Dado da brodo	dado, brodo granulare	
+ciqual	11010	Lievito di birra fresco	lievito di birra	
+usda_sr	170567	Mandorle	mandorla	1 manciata=30
+ciqual	15005	Noci	noce, gherigli di noce	1 manciata=30
+ciqual	15004	Nocciole	nocciola	1 manciata=30
+ciqual	15001	Arachidi	noccioline	
+ciqual	15054	Anacardi		
+ciqual	15044	Pistacchi		
+ciqual	15025	Pinoli		
+ciqual	15045	Semi di girasole		
+usda_fnd	2515380	Semi di zucca		
+ciqual	15047	Semi di chia	chia	
+ciqual	15034	Semi di lino	lino	
+ciqual	15010	Semi di sesamo	sesamo	
+ciqual	15202	Burro di arachidi	crema di arachidi	
+ciqual	15203	Tahina	tahini, crema di sesamo	
+ciqual	18066	Acqua del rubinetto	acqua	
+ciqual	18044	Acqua minerale		
+ciqual	18071	Caffè espresso	caffè, espresso	1 tazzina=30
+usda_sr	171890	Caffè americano	caffè filtro, caffè lungo	
+ciqual	18151	Cappuccino	caffellatte, caffè latte	
+ciqual	18020	Tè	tè nero, tè verde, tisana	
+ciqual	2013	Spremuta d'arancia	spremuta	
+ciqual	2070	Succo d'arancia	succo di arancia	
+ciqual	2074	Succo di mela		
+ciqual	2371	Succo di pesca	nettare di pesca	
+ciqual	18018	Cola	coca cola	
+ciqual	5001	Birra	birra chiara	1 lattina=330
+ciqual	5214	Vino rosso		1 bicchiere=125
+ciqual	5215	Vino bianco		1 bicchiere=125
+ciqual	5201	Spumante	prosecco	
+ciqual	18348	Bevanda isotonica	integratore salino, sport drink	
+ciqual	18100	Cacao amaro	cacao in polvere	
+ciqual	4004	Patatine in busta	patatine, chips	
+usda_sr	167959	Popcorn		
+ciqual	31113	Barretta ai cereali	barretta	
+usda_sr	173177	Proteine del siero del latte	proteine in polvere, whey	1 misurino=30
+ciqual	25614	Insalata di riso		
+ciqual	25052	Parmigiana di melanzane	parmigiana, melanzane gratinate	
+ciqual	25547	Toast prosciutto e formaggio	toast	
+ciqual	25522	Panino imbottito	tramezzino, sandwich	
+ciqual	25456	Sushi	maki	
+ciqual	11304	Brodo di carne	brodo	

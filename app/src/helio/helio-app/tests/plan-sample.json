@@ -1,0 +1,120 @@
+{
+ "1": {
+  "text": "Rest",
+  "types": [],
+  "exercises": []
+ },
+ "2": {
+  "text": "Strength A: upper body and core",
+  "types": [
+   "strength"
+  ],
+  "day": 1,
+  "load_kg": 10,
+  "exercises": [
+   [
+    "Warm-up",
+    "8 min, easy pace"
+   ],
+   [
+    "Push-ups",
+    "3×10, rest 90 s"
+   ],
+   [
+    "Dumbbell rows",
+    "3×10, rest 90 s"
+   ],
+   [
+    "Plank",
+    "3×30 s"
+   ],
+   [
+    "Stretching",
+    "5 min"
+   ]
+  ]
+ },
+ "3": {
+  "text": "Brisk walk or easy run",
+  "types": [
+   "walk",
+   "run"
+  ],
+  "exercises": []
+ },
+ "4": {
+  "text": "Strength B: legs",
+  "types": [
+   "strength"
+  ],
+  "day": 2,
+  "load_kg": 10,
+  "exercises": [
+   [
+    "Warm-up",
+    "8 min, easy pace"
+   ],
+   [
+    "Bodyweight squats",
+    "3×12, rest 90 s"
+   ],
+   [
+    "Lunges with 10 kg",
+    "3×10 per leg, rest 90 s"
+   ],
+   [
+    "Glute bridge",
+    "3×15"
+   ],
+   [
+    "Stretching",
+    "5 min"
+   ]
+  ]
+ },
+ "5": {
+  "text": "Swimming or cycling",
+  "types": [
+   "swim",
+   "other"
+  ],
+  "exercises": []
+ },
+ "6": {
+  "text": "Strength C: full body",
+  "types": [
+   "strength"
+  ],
+  "day": 3,
+  "load_kg": 10,
+  "exercises": [
+   [
+    "Warm-up",
+    "8 min, easy pace"
+   ],
+   [
+    "Dumbbell deadlift",
+    "3×10, rest 90 s"
+   ],
+   [
+    "Dumbbell shoulder press",
+    "3×10, rest 90 s"
+   ],
+   [
+    "Mountain climbers",
+    "3×30 s"
+   ],
+   [
+    "Stretching",
+    "5 min"
+   ]
+  ]
+ },
+ "7": {
+  "text": "Active rest: a walk",
+  "types": [
+   "walk"
+  ],
+  "exercises": []
+ }
+}

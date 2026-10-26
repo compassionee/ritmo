@@ -76,3 +76,23 @@ app/.cxx/
 *.patch
 
 __pycache__/
+
+# Ritmo / flavor helio: never commit keys, signing data, band dumps or databases
+keys/
+*.properties
+!gradle.properties
+!gradle/wrapper/gradle-wrapper.properties
+!app/src/main/project.properties
+!app/src/main/res/android-logger.properties
+dump/
+helio_raw_*.zip
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+helio-state*.tgz
+helio-config.json
+*.gpg
+__pycache__/

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Ritmo has no network at all: Gadgetbridge already removes INTERNET; this also removes the Internet Helper
+         permission (requests passed to that separate app). The Helio Strap does not use it: no Wi-Fi FTP, no
+         display (music, maps, voice memos). check_apk.py checks both -->
+    <uses-permission android:name="nodomain.freeyourgadget.internethelper.INTERNET" tools:node="remove" />
+
+    <application>
+        <!-- One launcher icon, Helio: Gadgetbridge opens from the band menu of Helio -->
+        <activity
+            android:name="nodomain.freeyourgadget.gadgetbridge.activities.ControlCenterv2"
+            tools:node="merge">
+            <intent-filter tools:node="remove">
+                <category android:name="android.intent.category.DEFAULT" />
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Helio runs in its own process, which starts when it is opened and ends with Back from
+             its main screen; in the background it stays, idle, in the recent apps (no
+             excludeFromRecents / noHistory / autoRemoveFromRecents: check_apk.py checks it).
+             Gadgetbridge skips its initialization there (see GBApplication). -->
+        <activity
+            android:name="nodomain.freeyourgadget.gadgetbridge.helio.HelioActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/helio_app_name"
+            android:process=":helio"
+            android:taskAffinity="nodomain.freeyourgadget.gadgetbridge.helio.app"
+            android:theme="@android:style/Theme.Material">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Runs the actions of the Helio band menu in the main process; started by Helio with
+             an explicit intent, never by other apps -->
+        <activity
+            android:name="nodomain.freeyourgadget.gadgetbridge.helio.HelioGbActionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- Field for the band's auth key, in the main process (the device preferences live there); started
+             only by HelioGbActionActivity: not exported, no intent-filter -->
+        <activity
+            android:name="nodomain.freeyourgadget.gadgetbridge.helio.HelioAuthKeyActivity"
+            android:exported="false"
+            android:label="@string/helio_authkey_title"
+            android:theme="@android:style/Theme.Material"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Barcode scanner of the food search (CameraX + ZXing), in Helio's process; started only by
+             Helio. The camera permission is asked here, at the first scan -->
+        <activity
+            android:name="nodomain.freeyourgadget.gadgetbridge.helio.HelioScanActivity"
+            android:exported="false"
+            android:process=":helio"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
+
+        <!-- Records the band state for Helio, at the start of the main process (no data) -->
+        <provider
+            android:name="nodomain.freeyourgadget.gadgetbridge.helio.HelioBandStateProvider"
+            android:authorities="${applicationId}.helio_band_state"
+            android:exported="false" />
+
+        <!-- The WebView metrics would be sent to Google -->
+        <meta-data
+            android:name="android.webkit.WebView.MetricsOptOut"
+            android:value="true" />
+    </application>
+</manifest>

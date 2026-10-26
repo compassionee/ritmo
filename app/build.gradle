@@ -2,12 +2,33 @@ import com.android.build.api.variant.ResValue
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 import java.nio.file.Files
+import javax.inject.Inject
+
+// applicationId of the helio flavor: -PhelioApplicationId=..., else helio.applicationId in local.properties
+// (not versioned), else the project's own. A personal build can keep an older id and update in place.
+def helioApplicationId() {
+    def id = project.findProperty("helioApplicationId")
+    if (id == null) {
+        def localFile = rootProject.file("local.properties")
+        if (localFile.exists()) {
+            def localProps = new Properties()
+            localFile.withInputStream { localProps.load(it) }
+            id = localProps.getProperty("helio.applicationId")
+        }
+    }
+    id = (id ?: "io.github.compassionee.ritmo").toString().trim()
+    if (!(id ==~ /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/)) {
+        throw new GradleException("helio applicationId non valido: " + id)
+    }
+    return id
+}
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.parcelize)
     alias(libs.plugins.kaitai)
+    alias(libs.plugins.chaquopy)
 }
 
 tasks.withType(Test).configureEach {
@@ -149,6 +170,7 @@ android {
         buildConfigField "String", "GIT_HASH_SHORT", "\"${getGitHashShort()}\""
         buildConfigField "String", "GIT_DIRTY_STATUS", "\"${getGitDirtyFlag()}\""
         buildConfigField "boolean", "INTERNET_ACCESS", "false"
+        buildConfigField "boolean", "HELIO_WEBVIEW_DEBUG", "false"
 
         manifestPlaceholders = [
             appAuthRedirectScheme: "${applicationId}"
@@ -156,6 +178,24 @@ android {
     }
 
     signingConfigs {
+        // Release key of the helio flavor: local.properties has helio.signing=<path of a
+        // properties file with storeFile, storePassword, keyAlias, keyPassword>
+        helio {
+            def localProps = new Properties()
+            def localFile = rootProject.file("local.properties")
+            if (localFile.exists()) {
+                localFile.withInputStream { localProps.load(it) }
+            }
+            def signingPath = localProps.getProperty("helio.signing")
+            if (signingPath != null && new File(signingPath).exists()) {
+                def signing = new Properties()
+                new File(signingPath).withInputStream { signing.load(it) }
+                storeFile file(signing.getProperty("storeFile"))
+                storePassword signing.getProperty("storePassword")
+                keyAlias signing.getProperty("keyAlias")
+                keyPassword signing.getProperty("keyPassword")
+            }
+        }
         nightly {
             if (System.getProperty("nightly_store_file") != null) {
                 storeFile file(System.getProperty("nightly_store_file"))
@@ -184,6 +224,24 @@ android {
             versionNameSuffix "-banglejs"
             buildConfigField "boolean", "INTERNET_ACCESS", "true"
             // Note: app/src/banglejs/AndroidManifest.xml contains some extra permissions
+        }
+
+        helio {
+            // Gadgetbridge with the Helio app (Python via Chaquopy), see app/src/helio/
+            dimension "device_type"
+            applicationId = helioApplicationId()
+            // Helio's own updates; must stay >= the installed one and >= Gadgetbridge's versionCode
+            versionCode = 266
+            // Chaquopy needs API 24
+            minSdk = 24
+            ndk {
+                // Python 3.12+ is only available for 64-bit ABIs
+                abiFilters "arm64-v8a"
+            }
+            // The Helio WebView can be inspected from a computer only when built with
+            // -PhelioWebViewDebug=true, in every build type
+            buildConfigField "boolean", "HELIO_WEBVIEW_DEBUG",
+                    String.valueOf(project.findProperty("helioWebViewDebug") == "true")
         }
     }
 
@@ -214,6 +272,9 @@ android {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            if (signingConfigs.helio.storeFile != null) {
+                signingConfig = signingConfigs.helio
+            }
         }
 
         nightly {
@@ -279,12 +340,97 @@ android {
     }
 }
 
+// Chaquopy applies to every variant and needs minSdk 24 and abiFilters: on this branch
+// only the helio flavor is built
+androidComponents {
+    beforeVariants(selector().all()) { variantBuilder ->
+        if (variantBuilder.productFlavors.any { it.second != "helio" }) {
+            variantBuilder.enable = false
+        }
+    }
+}
+
+// Helio web interface: static/ of the Helio sources, without the service worker (its requests
+// would bypass the WebView interception, and its cache would keep an old interface)
+abstract class HelioStaticAssetsTask extends DefaultTask {
+    @InputDirectory
+    abstract DirectoryProperty getStaticDir()
+
+    // the food catalog shipped with the app (USDA + Ciqual), installed by Python on first use
+    @InputDirectory
+    abstract DirectoryProperty getCatalogDir()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @Inject
+    abstract FileSystemOperations getFs()
+
+    @TaskAction
+    void copy() {
+        fs.sync {
+            from(staticDir) { exclude "sw.js" }
+            into(outputDir.dir("helio/static"))
+        }
+        fs.sync {
+            from(catalogDir) { include "generic.tar" }
+            into(outputDir.dir("helio/catalog"))
+        }
+    }
+}
+
+def helioStaticAssets = tasks.register("helioStaticAssets", HelioStaticAssetsTask) {
+    staticDir = layout.projectDirectory.dir("src/helio/helio-app/static")
+    catalogDir = layout.projectDirectory.dir("src/helio/helio-app/catalog")
+    outputDir = layout.buildDirectory.dir("generated/helio/assets")
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        if (variant.productFlavors.any { it.second == "helio" }) {
+            variant.sources.assets?.addGeneratedSourceDirectory(helioStaticAssets, { it.outputDir })
+        }
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.13"
+    }
+    sourceSets {
+        getByName("helio") {
+            // the Helio sources, as installed on the server: only the Python modules and the
+            // translations go in the app (static/ becomes assets, tests/ run on the computer)
+            srcDir("src/helio/helio-app")
+            // static/i18n stays: the reason of a rejected import is translated in Python
+            // tools/ (catalog builder) runs on the computer; catalog/ goes in the assets
+            exclude("tests/**", "static/*.*", "*.sh", "tools/**", "catalog/**")
+        }
+    }
+    productFlavors {
+        getByName("helio") {
+            pip {
+                // tzdata: Android has no /usr/share/zoneinfo for Python's zoneinfo
+                options("--require-hashes")
+                install("-r", "src/helio/python-requirements.txt")
+            }
+        }
+    }
+}
+
 androidComponents {
     onVariants(selector().all()) { variant ->
         variant.resValues.put(
             variant.makeResValueKey("string", "applicationId"),
             variant.applicationId.map { new ResValue(it, null) }
         )
+        if (variant.productFlavors.any { it.second == "helio" }) {
+            // own Pebble provider authority, derived from the applicationId: two installs never clash
+            variant.resValues.put(
+                variant.makeResValueKey("string", "pebble_content_provider"),
+                variant.applicationId.map { new ResValue(it + ".pebble_provider", null) }
+            )
+        }
 
         if (variant.buildType == "nightly" || variant.buildType == "nopebble") {
             variant.outputs.each { output ->
@@ -306,6 +452,8 @@ dependencies {
 
     implementation libs.androidx.constraintlayout
     implementation libs.bundles.androidx.camera
+
+    helioImplementation libs.androidx.webkit
 
     testImplementation libs.junit
     testImplementation libs.mockito

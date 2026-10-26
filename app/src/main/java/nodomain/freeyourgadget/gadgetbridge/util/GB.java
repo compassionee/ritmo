@@ -199,10 +199,21 @@ public class GB {
     }
 
     private static PendingIntent getContentIntent(Context context) {
-        Intent notificationIntent = new Intent(context, ControlCenterv2.class);
+        // the launcher activity: ControlCenterv2, or the one of a flavor that replaces it (helio)
+        Intent notificationIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        if (notificationIntent == null) {
+            notificationIntent = new Intent(context, ControlCenterv2.class);
+        }
         notificationIntent.setPackage(BuildConfig.APPLICATION_ID);
-        notificationIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        if (notificationIntent.getComponent() != null
+                && !ControlCenterv2.class.getName().equals(notificationIntent.getComponent().getClassName())) {
+            // a flavor's own launcher activity (helio): like the icon, back to the open task as it is
+            notificationIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        } else {
+            notificationIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        }
 
         return PendingIntent.getActivity(context, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE);
     }

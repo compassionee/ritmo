@@ -65,6 +65,9 @@ import androidx.lifecycle.ProcessLifecycleOwner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -213,12 +216,53 @@ public class GBApplication extends Application {
         }
     }
 
+    /** True in the Helio process, where onCreate skips Gadgetbridge's initialization. */
+    private boolean helioProcess;
+
+    private static boolean isHelioProcess() {
+        final String processName;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            processName = Application.getProcessName();
+        } else {
+            processName = readProcessNameFromProc();
+        }
+        return processName != null && processName.endsWith(HELIO_PROCESS_SUFFIX);
+    }
+
+    @Nullable
+    private static String readProcessNameFromProc() {
+        try (FileInputStream in = new FileInputStream("/proc/self/cmdline")) {
+            final byte[] buf = new byte[256];
+            final int n = in.read(buf);
+            int end = 0;
+            while (end < n && buf[end] != 0) {
+                end++;
+            }
+            return new String(buf, 0, end, StandardCharsets.UTF_8);
+        } catch (final IOException e) {
+            return null;
+        }
+    }
+
     protected DeviceService createDeviceService() {
         return new GBDeviceService(this);
     }
 
+    /**
+     * Name of the separate process where the Helio app runs (helio flavor only).
+     */
+    public static final String HELIO_PROCESS_SUFFIX = ":helio";
+
     @Override
     public void onCreate() {
+        if (isHelioProcess()) {
+            // The Helio app runs in its own process, without Gadgetbridge (database, services,
+            // receivers): skip the whole initialization there
+            helioProcess = true;
+            super.onCreate();
+            return;
+        }
+
         if (app != null) {
             super.onCreate();
             // guard against multiple invocations (robolectric)
@@ -336,6 +380,10 @@ public class GBApplication extends Application {
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
+        if (helioProcess) {
+            // no device manager nor database session in the Helio process
+            return;
+        }
         if (level >= TRIM_MEMORY_BACKGROUND) {
             if (!hasBusyDevice()) {
                 DBHelper.clearSession();
@@ -781,6 +829,10 @@ public class GBApplication extends Application {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        if (helioProcess) {
+            // no preferences in the Helio process
+            return;
+        }
         updateLanguage(getLanguage());
     }
 
