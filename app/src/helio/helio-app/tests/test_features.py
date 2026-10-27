@@ -595,6 +595,19 @@ class WeightLog(Base):
         self.assertEqual(self.prof(END)["weight"], 81.0)
         self.assertEqual(self.h.weight_for(date(2026, 3, 9)), None)
 
+    def test_save_in_same_clock_tick_is_seen(self):
+        # Two saves within one tick of the filesystem clock keep the mtime (and here the size): the cached
+        # profile must still follow the second one.
+        path = self.state / "weights.json"
+        self.h.save_weight(date(2026, 3, 10), 81.0)
+        self.assertEqual(self.prof(END)["weight"], 81.0)
+        st = path.stat()
+        self.h.save_weight(date(2026, 3, 10), 82.0)
+        os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
+        self.assertEqual(path.stat().st_size, st.st_size)
+        self.assertEqual(self.prof(END)["weight"], 82.0)
+        self.assertEqual(self.h.weight_for(END), ("2026-03-10", 82.0))
+
     def test_validation(self):
         for kg in (29.9, 250.1, "80", True, float("nan"), -5):
             with self.assertRaises(ValueError, msg=str(kg)):

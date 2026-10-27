@@ -1370,26 +1370,33 @@ def state_load(name, default=None):
     return data
 
 
+_viewlock = threading.Lock()
+_stategen = {}  # writes of this process per state file: two saves in the same filesystem clock tick can leave
+# mtime, size and even the inode unchanged, so the stat alone does not tell the versions apart
+
+
+def _state_touched(name):
+    with _viewlock:
+        _stategen[name] = _stategen.get(name, 0) + 1
+
+
 def state_version(name):
+    gen = _stategen.get(name, 0)
     try:
-        return state_path(name).stat().st_mtime_ns
+        st = state_path(name).stat()
+        return (gen, st.st_mtime_ns, st.st_size, st.st_ino)
     except OSError:
-        return 0
+        return (gen, None)
 
 
 _viewcache = {}
-_viewlock = threading.Lock()
 
 
 def state_view(name, load, extra=None):
     """load() of a state file for reading only (never change what it returns), read again only when the file
     changes (or extra, another file it depends on): the computations of a page read the profile, the weights and
     the labels hundreds of times."""
-    try:
-        st = state_path(name).stat()
-        ver = (STATE_DIR, extra, st.st_mtime_ns, st.st_size, st.st_ino)
-    except OSError:
-        ver = (STATE_DIR, extra, None)
+    ver = (STATE_DIR, extra, state_version(name))
     with _viewlock:
         hit = _viewcache.get(name)
     if hit and hit[0] == ver:
@@ -1410,6 +1417,7 @@ def state_save(name, data):
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
+    _state_touched(name)
     try:
         fd = os.open(STATE_DIR, os.O_RDONLY)
         os.fsync(fd)
@@ -1423,6 +1431,7 @@ def state_delete(name):
         state_path(name).unlink()
     except FileNotFoundError:
         pass
+    _state_touched(name)
 
 
 def labels_file():
