@@ -1,0 +1,145 @@
+# Builds the signed Ritmo APK and publishes it in GitHub Releases.
+#
+# Runs when a tag starting with "v" is pushed (for example v267), or by hand from the Actions tab
+# with the tag to publish. The APK is signed with the release key stored in the repository secrets,
+# so installs from the release update in place:
+#   RITMO_KEYSTORE_BASE64   the keystore (.p12 or .jks) encoded with base64
+#   RITMO_STORE_PASSWORD    keystore password
+#   RITMO_KEY_ALIAS         key alias
+#   RITMO_KEY_PASSWORD      key password
+# Optional repository variable RITMO_APPLICATION_ID: package to build (default io.github.compassionee.ritmo).
+# See "Publishing a release" in README.md.
+name: Release APK
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (created on the current commit if missing), e.g. v267"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Chaquopy needs a build Python of the same version as the app's (3.13)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Check the signing secrets
+        env:
+          KS: ${{ secrets.RITMO_KEYSTORE_BASE64 }}
+          SP: ${{ secrets.RITMO_STORE_PASSWORD }}
+          KA: ${{ secrets.RITMO_KEY_ALIAS }}
+          KP: ${{ secrets.RITMO_KEY_PASSWORD }}
+        run: |
+          missing=""
+          [ -n "$KS" ] || missing="$missing RITMO_KEYSTORE_BASE64"
+          [ -n "$SP" ] || missing="$missing RITMO_STORE_PASSWORD"
+          [ -n "$KA" ] || missing="$missing RITMO_KEY_ALIAS"
+          [ -n "$KP" ] || missing="$missing RITMO_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing. An unsigned APK cannot be installed, so nothing is published."
+            exit 1
+          fi
+
+      - name: Write the signing configuration (outside the repository)
+        env:
+          KS: ${{ secrets.RITMO_KEYSTORE_BASE64 }}
+          SP: ${{ secrets.RITMO_STORE_PASSWORD }}
+          KA: ${{ secrets.RITMO_KEY_ALIAS }}
+          KP: ${{ secrets.RITMO_KEY_PASSWORD }}
+        run: |
+          umask 077
+          D="$RUNNER_TEMP/signing"
+          mkdir -p "$D"
+          echo "$KS" | base64 -d > "$D/release.keystore"
+          {
+            echo "storeFile=$D/release.keystore"
+            echo "storePassword=$SP"
+            echo "keyAlias=$KA"
+            echo "keyPassword=$KP"
+          } > "$D/signing.properties"
+          echo "helio.signing=$D/signing.properties" >> local.properties
+
+      - name: Build the release APK
+        env:
+          APP_ID: ${{ vars.RITMO_APPLICATION_ID }}
+        run: |
+          ./gradlew --no-daemon assembleHelioRelease ${APP_ID:+-PhelioApplicationId=$APP_ID}
+
+      - name: Run the tests on the APK
+        env:
+          HELIO_PACKAGE: ${{ vars.RITMO_APPLICATION_ID }}
+        run: |
+          [ -n "$HELIO_PACKAGE" ] || unset HELIO_PACKAGE
+          app/src/helio/run-tests.sh app/build/outputs/apk/helio/release/app-helio-release.apk
+
+      - name: Prepare the files
+        run: |
+          VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle | head -n1)  # the helio flavor's
+          echo "VERSION_CODE=$VC" >> "$GITHUB_ENV"
+          mkdir -p dist
+          cp app/build/outputs/apk/helio/release/app-helio-release.apk "dist/Ritmo-$TAG.apk"
+          (cd dist && sha256sum "Ritmo-$TAG.apk" > "Ritmo-$TAG.apk.sha256")
+          CERT=$("$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)apksigner" verify --print-certs "dist/Ritmo-$TAG.apk" \
+                 | sed -n 's/.*certificate SHA-256 digest: //p' | head -n1)
+          echo "CERT_SHA256=$CERT" >> "$GITHUB_ENV"
+          rm -rf "$RUNNER_TEMP/signing"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<EOF
+          ## Install
+
+          1. Download **Ritmo-$TAG.apk** below (Assets) on your Android phone.
+          2. Open it and allow the installation from this source when Android asks.
+          3. Already installed? The new APK updates it in place and keeps your data.
+
+          Full guide: [Installation](https://github.com/${GITHUB_REPOSITORY}#-installation).
+
+          | | |
+          |---|---|
+          | versionCode | \`$VERSION_CODE\` |
+          | APK SHA-256 | see \`Ritmo-$TAG.apk.sha256\` |
+          | Signing certificate SHA-256 | \`$CERT_SHA256\` |
+
+          Requires Android 7.0 or later on a 64-bit (arm64-v8a) phone.
+          EOF
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "Ritmo $TAG" --notes-file notes.md --generate-notes \
+              --target "$GITHUB_SHA"
+          fi

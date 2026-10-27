@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-label="Ritmo: your band's data, on your phone, offline">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#161a22"/>
+      <stop offset="1" stop-color="#0e1016"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7fd1c7" stop-opacity="0"/>
+      <stop offset="0.25" stop-color="#7fd1c7"/>
+      <stop offset="0.6" stop-color="#8ab4f8"/>
+      <stop offset="0.9" stop-color="#b79cf2"/>
+      <stop offset="1" stop-color="#b79cf2" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="dot" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7fd1c7"/>
+      <stop offset="1" stop-color="#8ab4f8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="360" rx="28" fill="url(#bg)"/>
+  <g opacity="0.07" stroke="#ffffff" stroke-width="1">
+    <path d="M0 90H1200M0 180H1200M0 270H1200"/>
+    <path d="M150 0V360M300 0V360M450 0V360M600 0V360M750 0V360M900 0V360M1050 0V360"/>
+  </g>
+  <path d="M40 250 H330 L360 250 L380 205 L405 300 L432 120 L460 330 L486 250 L560 250 L580 232 L600 250 H610"
+        fill="none" stroke="url(#line)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="432" cy="120" r="9" fill="url(#dot)"/>
+  <text x="640" y="150" font-family="Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="96" font-weight="700" fill="#f1f3f7" letter-spacing="-2">Ritmo</text>
+  <text x="644" y="200" font-family="Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="28" fill="#aeb6c4">Your band's data, on your phone.</text>
+  <text x="644" y="238" font-family="Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="28" fill="#aeb6c4">No account. No cloud. No network.</text>
+  <g font-family="Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="600">
+    <rect x="644" y="276" width="96" height="38" rx="19" fill="#21403b"/>
+    <text x="692" y="301" text-anchor="middle" fill="#7fd1c7">Sleep</text>
+    <rect x="752" y="276" width="70" height="38" rx="19" fill="#22324d"/>
+    <text x="787" y="301" text-anchor="middle" fill="#8ab4f8">HRV</text>
+    <rect x="834" y="276" width="112" height="38" rx="19" fill="#2c2547"/>
+    <text x="890" y="301" text-anchor="middle" fill="#b79cf2">Workouts</text>
+    <rect x="958" y="276" width="100" height="38" rx="19" fill="#2f3a1f"/>
+    <text x="1008" y="301" text-anchor="middle" fill="#b8d98a">Food</text>
+  </g>
+</svg>
