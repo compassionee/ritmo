@@ -3778,10 +3778,12 @@ def entry_source(e):
 
 
 # ------------------------------------------------ food catalog (community databases, read only)
-# Search, barcodes and items read the catalog files in CATALOG_DIR and never the network; only "Update from
-# URL" downloads (helio_catalog_fetch, imported inside catalog_update_url). Installing, updating or removing a
-# catalog never touches STATE_DIR: the user's foods, recipes, saved meals and diary stay as they are.
-CATALOG_URL_FILE = "source.json"
+# Search, barcodes and items read the catalog files in CATALOG_DIR and never the network: a new package is
+# installed only from a file (import on the phone, the command line on the server); nothing is ever downloaded.
+# Installing, updating or removing a catalog never touches STATE_DIR: the user's foods, recipes, saved meals
+# and diary stay as they are.
+# left by versions up to 266, which had "Update from URL": removed on first use
+OLD_URL_FILE = "source.json"
 _catalog_lock = threading.Lock()
 _catalog_checked = False
 
@@ -3797,6 +3799,10 @@ def catalog_ready():
                 hc.ensure_bundled(CATALOG_BUNDLED, CATALOG_DIR, STATE_DIR)
             except (hc.CatalogError, OSError, sqlite3.Error) as e:
                 print(f"Bundled food catalog not installed: {e!r}", flush=True)
+            try:
+                (CATALOG_DIR / OLD_URL_FILE).unlink()
+            except OSError:
+                pass
             _catalog_checked = True
 
 
@@ -3898,24 +3904,15 @@ def catalog_bench(lang=None):
     return {"queries": out, "median_ms": ms[len(ms) // 2], "max_ms": ms[-1]}
 
 
-def catalog_url():
-    try:
-        data = json.loads((CATALOG_DIR / CATALOG_URL_FILE).read_text())
-    except (OSError, ValueError):
-        return ""
-    url = data.get("url") if isinstance(data, dict) else None
-    return url if isinstance(url, str) else ""
-
-
 def catalog_info():
-    """Installed catalogs with their sources and licences, and the update address (empty by default)."""
+    """Installed catalogs with their sources and licences."""
     catalog_ready()
     out = {}
     for kind, m in hc.info(CATALOG_DIR).items():
         out[kind] = {"version": m["version"], "rows": m["rows"], "file_size": m["file_size"],
                      "sqlite_sha256": m["sqlite_sha256"],
                      "sources": [{**s, **hc.SOURCE_INFO[s["id"]]} for s in m["sources"] if s.get("id") in hc.SOURCE_INFO]}
-    return {"installed": out, "outdated": hc.outdated(CATALOG_DIR), "url": catalog_url(), "kinds": list(hc.KINDS),
+    return {"installed": out, "outdated": hc.outdated(CATALOG_DIR), "kinds": list(hc.KINDS),
             "sources": {k: v for k, v in hc.SOURCE_INFO.items()}}
 
 
@@ -3930,27 +3927,6 @@ def catalog_install(path):
     return {"ok": True, "kind": m["kind"], "version": m["version"], "rows": m["rows"]}
 
 
-def catalog_update_url():
-    """Downloads the package from the saved address and installs it (the only request to the network)."""
-    url = catalog_url()
-    if not url:
-        raise UserError("cat.e.no_url")
-    import helio_catalog_fetch  # only here: search and the rest of the app never load the network code
-    CATALOG_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = CATALOG_DIR / f".download-{secrets.token_hex(6)}.tar"
-    try:
-        try:
-            helio_catalog_fetch.download(url, tmp)
-        except hc.CatalogError as e:
-            raise catalog_error(e)
-        return catalog_install(tmp)
-    finally:
-        try:
-            tmp.unlink()
-        except FileNotFoundError:
-            pass
-
-
 def catalog_op(body):
     op = body.get("op")
     if op == "remove":
@@ -3962,21 +3938,6 @@ def catalog_op(body):
             except hc.CatalogError as e:
                 raise catalog_error(e)
         return {"ok": True}
-    if op == "set_url":
-        url = body.get("url")
-        if not isinstance(url, str) or len(url) > 500 or (url and not re.fullmatch(r"https://[^\s]+", url)):
-            raise UserError("cat.e.url")
-        try:
-            hc.check_dirs(CATALOG_DIR, STATE_DIR)
-        except hc.CatalogError as e:
-            raise catalog_error(e)
-        CATALOG_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = CATALOG_DIR / (CATALOG_URL_FILE + ".tmp")
-        tmp.write_text(json.dumps({"url": url}))
-        os.replace(tmp, CATALOG_DIR / CATALOG_URL_FILE)
-        return {"ok": True, "url": url}
-    if op == "update_url":
-        return catalog_update_url()
     raise UserError("e.op_invalid")
 
 

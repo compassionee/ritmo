@@ -231,7 +231,7 @@ android {
             dimension "device_type"
             applicationId = helioApplicationId()
             // Helio's own updates; must stay >= the installed one and >= Gadgetbridge's versionCode
-            versionCode = 266
+            versionCode = 267
             // Chaquopy needs API 24
             minSdk = 24
             ndk {

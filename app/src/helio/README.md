@@ -3,7 +3,8 @@
 One APK (configurable package, see "Package"; default `io.github.compassionee.ritmo`) and one icon, **Ritmo**: the
 same web interface and the same Python code as the server, running on the phone, with Gadgetbridge
 behind it for the band. In the code the component is still called `helio` (after the band model it was
-born for); the visible name of the app is Ritmo.
+born for); the visible name of the app is Ritmo. **Ritmo never uses the network**: the APK has no network
+permission, and data (band, catalog packages, archives) enters only from the band or from files.
 
 ## Helio and Gadgetbridge together
 
@@ -122,8 +123,8 @@ page's server).
   installed by Python on first use (again after an app update); `off.sqlite` (Open Food Facts, products sold
   in Europe: EU 27, Norway, Iceland, Liechtenstein, Switzerland, United Kingdom, plus those without a country
   but with a European GS1 prefix; about 2.1 million products, 158 MB package, 562 MB installed), imported by
-  the user (Profile > Food database > Import from file, action `catalog_import`) or downloaded from an
-  optional HTTPS address (empty by default). Each installed file has its manifest next to it
+  the user (Profile > Food database > Import from file, action `catalog_import`): a file is the only way,
+  nothing is ever downloaded. Each installed file has its manifest next to it
   (`<kind>.json`); a file of an older schema is not opened and the card asks to import the new package.
 - **Package** (schema 2): a `.tar` with `manifest.json` (format, schema, kind, version, sources, rows, sizes
   and SHA-256 of both files) and `catalog.sqlite.xz`. The FTS5 index is built with the database on the
@@ -143,7 +144,10 @@ page's server).
   only with "Save to my foods", as a new copy that keeps its origin (each value shows its source: the
   catalog while unchanged, the user once corrected); diary entries of community foods keep a copy of the
   values and the source. The export and import of Ritmo's data never include the catalog.
-- **Network**: only `helio_catalog_fetch.py` downloads, imported only by "Update from URL".
+- **No network, in any case**: no part of Ritmo connects to the Internet (no catalog download, no lookup of
+  foods or barcodes online). The APK asks for neither `INTERNET` nor the Internet Helper permission
+  (`check_apk.py`), the WebView blocks every load outside the app, and the tests check that no Python module
+  of the app is a network client.
 - Builder: `helio-app/tools/build_food_db.py` (USDA/Ciqual/OFF to EU label values; the Open Food Facts
   part reads the Parquet export with pyarrow, on the computer only); licences and attributions in the
   About screen.

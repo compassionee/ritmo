@@ -200,19 +200,10 @@ class CatalogUI(UIBase):
         expect(card.locator("#catalogList")).to_contain_text("ODbL 1.0")
         expect(self.page.locator("#catalogImport")).to_be_hidden()  # in the browser: no file picker of the app
         expect(self.page.locator("#catalogServerNote")).to_be_visible()
-        card.locator("summary").click()
-        expect(self.page.locator("#catalogUrl")).to_have_value("")
-        expect(self.page.locator("#catalogUrlUpdate")).to_be_disabled()
-        self.page.fill("#catalogUrl", "http://example.org/x.tar")
-        self.page.click("#catalogUrlSave")
-        expect(self.page.locator("#catalogErr")).to_contain_text(self.Lpart("cat.e.url", 0))
-        self.page.fill("#catalogUrl", "https://example.org/x.tar")
-        self.page.click("#catalogUrlSave")
-        self.toast(self.L("cat.url_saved"))
-        expect(self.page.locator("#catalogUrlUpdate")).to_be_enabled()
-        self.page.fill("#catalogUrl", "")
-        self.page.click("#catalogUrlSave")
-        self.toast(self.L("cat.url_saved"))
+        # only "Import from file": no address field nor "Update from URL" (Ritmo has no network)
+        expect(card.locator("input[type=url], #catalogUrl, #catalogUrlBox, details")).to_have_count(0)
+        self.assertNotIn("https://", card.inner_text())
+        expect(self.page.locator("#catalogServerNote")).to_have_text(self.L("cat.server_import"))
         self.assertEqual(self.outside, [])
 
 

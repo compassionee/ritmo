@@ -4,14 +4,14 @@ Project: <https://github.com/compassionee/ritmo>
 
 Ritmo is an Android app to see and understand the data of a heart rate band: sleep, resting heart
 rate, HRV, SpO₂, stress, steps, workouts, calories, nutrition and weight. It works without an account
-and without network: the data stays on the phone. The interface is available in English and Italian
+and without network, in any case: the app has no network permission and the data stays on the phone. The interface is available in English and Italian
 (the system language by default, selectable in the Profile).
 
 Foods are searched on the phone in local databases: generic foods (USDA FoodData Central and ANSES
 Ciqual, shipped with the app, with Italian names) and, optionally, packaged products from Open Food Facts
 (an extract of the products sold in Europe, imported from a file), also by barcode with the camera. No food or barcode is looked up
-online; the only optional network use is downloading the whole extract from an address you set. Your
-own foods always come first and the databases never change them.
+online and nothing is ever downloaded: a new extract is installed only from a file. Your own foods always
+come first and the databases never change them.
 
 It is a fork of [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge), which handles the
 Bluetooth connection to the band and the database. On top of it, in a separate process, Ritmo runs its

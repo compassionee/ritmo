@@ -13,7 +13,7 @@ The full-text index (FTS5) is built with the database, on the computer: installi
 both hashes, structure, rows and values) and replaces the installed file with an atomic rename; if
 anything fails, the previous catalog stays.
 
-This module never uses the network (helio_catalog_fetch.py downloads a package for "Update from URL").
+This module never uses the network, and neither does the rest of the app: packages are installed only from a file.
 """
 import functools
 import hashlib

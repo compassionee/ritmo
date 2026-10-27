@@ -5,6 +5,7 @@ community foods in the diary without saving them, "Save to my foods" as a copy, 
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import sys
@@ -93,7 +94,6 @@ class UserDataUntouched(Base):
             ("search after install", lambda: h.catalog_search("biscotti", "it")),
             ("update", lambda: h.catalog_install(self.off2)),
             ("same version again", lambda: h.catalog_install(self.off2)),
-            ("set url", lambda: h.catalog_op({"op": "set_url", "url": "https://example.org/off.tar"})),
         ]
         for name, step in steps:
             step()
@@ -105,9 +105,6 @@ class UserDataUntouched(Base):
                 h.catalog_install(pkg)
             self.assertEqual(snapshot(self.state), before, name)
         self.assertEqual(hc.info(self.cat)["off"]["version"], "2026-11-21")  # the failed update changed nothing
-        with mock.patch("helio_catalog_fetch.download", side_effect=lambda url, dest: shutil.copyfile(self.off1, dest)):
-            h.catalog_op({"op": "update_url"})
-        self.assertEqual(snapshot(self.state), before, "update from url")
         h.catalog_op({"op": "remove", "kind": "off"})
         self.assertEqual(snapshot(self.state), before, "remove")
         self.assertEqual(set(hc.info(self.cat)), {"generic"})
@@ -132,8 +129,6 @@ class UserDataUntouched(Base):
             with self.assertRaises(self.h.UserError) as e:
                 self.h.catalog_install(self.off1)
             self.assertEqual(e.exception.msg["$"], "cat.e.dir")
-            with self.assertRaises(self.h.UserError):
-                self.h.catalog_op({"op": "set_url", "url": "https://example.org/x.tar"})
         self.assertEqual(sorted(p.name for p in self.state.iterdir()), ["foods.json"])
 
     def test_only_the_community_catalog_is_replaced_by_hand(self):
@@ -146,7 +141,6 @@ class UserDataUntouched(Base):
         h = self.h
         before = helio_transfer.state_files(self.state)
         h.catalog_install(self.off1)
-        h.catalog_op({"op": "set_url", "url": "https://example.org/off.tar"})
         self.assertEqual(helio_transfer.state_files(self.state), before)
         archive = helio_transfer.export_bytes(str(self.state))
         _, files = helio_transfer.read_archive(archive)
@@ -308,7 +302,6 @@ class NoNetwork(Base):
             raise OSError("network blocked by the test")
 
         self.h.catalog_install(self.off1)
-        sys.modules.pop("helio_catalog_fetch", None)
         with mock.patch.object(socket.socket, "connect", refuse), \
                 mock.patch.object(socket.socket, "connect_ex", refuse), \
                 mock.patch.object(socket, "create_connection", refuse), \
@@ -328,68 +321,59 @@ class NoNetwork(Base):
             self.h.foods_payload()
             self.h.catalog_bench("it")
         self.assertEqual(attempts, [])
-        self.assertNotIn("helio_catalog_fetch", sys.modules)  # the download code is not even loaded
 
-    def test_search_code_has_no_network_imports(self):
+    def test_no_network_code_in_the_app(self):
+        # Ritmo has no network permission (from 266): no Python module of the app is a network client, and the
+        # old download module of "Update from URL" is gone. helio_app's http.server is the local server.
+        self.assertFalse((APP_DIR / "helio_catalog_fetch.py").exists())
+        clients = ("urllib.request", "urllib.error", "http.client", "ftplib", "smtplib", "poplib", "imaplib",
+                   "telnetlib", "xmlrpc", "requests", "httpx", "aiohttp", "helio_catalog_fetch")
+        files = sorted(APP_DIR.glob("*.py"))
+        bridge = APP_DIR.parent / "python" / "helio_android.py"  # in the Gadgetbridge flavor
+        files += [bridge] if bridge.is_file() else []
+        self.assertIn("helio_catalog.py", [f.name for f in files])
+        for f in files:
+            src = f.read_text()
+            for mod in clients:
+                self.assertNotRegex(src, rf"(?m)^\s*(import|from)\s+{re.escape(mod)}\b", f"{f.name}: {mod}")
+            self.assertNotRegex(src, r"create_connection|urlopen|\.connect\(\(", f.name)
         src = (APP_DIR / "helio_catalog.py").read_text()
-        for mod in ("socket", "urllib", "http", "ssl", "helio_catalog_fetch"):
+        for mod in ("socket", "ssl", "http", "urllib"):
             self.assertNotRegex(src, rf"(?m)^\s*(import|from)\s+{mod}\b", mod)
-        app = (APP_DIR / "helio_app.py").read_text()
-        uses = [line for line in app.splitlines() if "import helio_catalog_fetch" in line]
-        self.assertEqual(len(uses), 1)
-        start = app.index("def catalog_update_url(")
-        self.assertGreater(app.index("import helio_catalog_fetch"), start)
-        self.assertLess(app.index("import helio_catalog_fetch"), app.index("\ndef ", start + 1))
 
 
-class UpdateFromUrl(Base):
-    def test_no_address_by_default(self):
-        self.assertEqual(self.h.catalog_info()["url"], "")
-        with self.assertRaises(self.h.UserError) as e:
-            self.h.catalog_op({"op": "update_url"})
-        self.assertEqual(e.exception.msg["$"], "cat.e.no_url")
+class NoUpdateFromUrl(Base):
+    """"Update from URL" is gone (Ritmo has no network): only "Import from file" installs a package."""
 
-    def test_address_must_be_https(self):
-        for url in ("http://example.org/x.tar", "ftp://x", "https://a b", 3, "https://" + "a" * 600):
-            with self.assertRaises(self.h.UserError):
-                self.h.catalog_op({"op": "set_url", "url": url})
-        self.h.catalog_op({"op": "set_url", "url": "https://example.org/x.tar"})
-        self.assertEqual(self.h.catalog_info()["url"], "https://example.org/x.tar")
-        self.h.catalog_op({"op": "set_url", "url": ""})
-        self.assertEqual(self.h.catalog_info()["url"], "")
+    def test_url_operations_are_refused_and_write_nothing(self):
+        before = snapshot(self.cat) if self.cat.exists() else {}
+        for body in ({"op": "set_url", "url": "https://example.org/x.tar"}, {"op": "update_url"}):
+            with self.assertRaises(self.h.UserError) as e:
+                self.h.catalog_op(body)
+            self.assertEqual(e.exception.msg["$"], "e.op_invalid")
+        self.assertEqual(snapshot(self.cat) if self.cat.exists() else {}, before)
+        self.assertNotIn("url", self.h.catalog_info())
+        for name in ("catalog_url", "catalog_update_url", "CATALOG_URL_FILE"):
+            self.assertFalse(hasattr(self.h, name), name)
 
-    def test_downloaded_package_is_checked(self):
-        self.h.catalog_op({"op": "set_url", "url": "https://example.org/x.tar"})
-        with mock.patch("helio_catalog_fetch.download", side_effect=lambda url, dest: shutil.copyfile(self.off1, dest)):
-            res = self.h.catalog_op({"op": "update_url"})
-        self.assertEqual((res["kind"], res["rows"]), ("off", 5))
-        bad = repack(self.off2, self.pkgs / "bad2.tar", manifest={**hc.read_manifest(self.off2), "rows": 9})
-        with mock.patch("helio_catalog_fetch.download", side_effect=lambda url, dest: shutil.copyfile(bad, dest)):
-            with self.assertRaises(self.h.UserError):
-                self.h.catalog_op({"op": "update_url"})
-        self.assertEqual(hc.info(self.cat)["off"]["version"], "2026-10-21")
-        self.assertEqual(sorted(p.name for p in self.cat.iterdir()), ["off.json", "off.sqlite", "source.json"])  # no leftovers
+    def test_address_saved_by_an_older_version_is_removed(self):
+        self.cat.mkdir(parents=True, exist_ok=True)
+        (self.cat / "source.json").write_text('{"url": "https://example.org/x.tar"}')
+        self.h._catalog_checked = False
+        info = self.h.catalog_info()
+        self.assertNotIn("url", info)
+        self.assertFalse((self.cat / "source.json").exists())
 
-    def test_fetch_refuses_plain_http_without_connecting(self):
-        import helio_catalog_fetch
-        with mock.patch.object(urllib.request, "urlopen") as op:
-            with self.assertRaises(hc.CatalogError) as e:
-                helio_catalog_fetch.download("http://example.org/x.tar", self.tmp / "x.tar")
-            op.assert_not_called()
-        self.assertEqual(e.exception.key, "cat.e.url")
-
-    def test_fetch_size_limit(self):
-        import helio_catalog_fetch
-        import io
-
-        class Resp(io.BytesIO):
-            def geturl(self):
-                return "https://example.org/x.tar"
-
-        with mock.patch.object(urllib.request, "urlopen", return_value=Resp(b"x" * 5000)):
-            with self.assertRaises(hc.CatalogError) as e:
-                helio_catalog_fetch.download("https://example.org/x.tar", self.tmp / "x.tar", max_bytes=1000)
-        self.assertEqual(e.exception.key, "cat.e.size")
+    def test_no_texts_of_the_url_update(self):
+        for lang in ("en", "it"):
+            cat = json.loads((APP_DIR / "static" / "i18n" / f"{lang}.json").read_text())
+            self.assertEqual([k for k in cat if k.startswith(("cat.url", "cat.update_url", "cat.e.url", "cat.e.no_url",
+                                                               "cat.e.download"))], [], lang)
+            self.assertNotIn("URL", cat["cat.server_import"], lang)
+        html = (APP_DIR / "static" / "index.html").read_text()
+        js = (APP_DIR / "static" / "app.js").read_text()
+        for text in ("catalogUrl", "set_url", "update_url"):
+            self.assertNotIn(text, html + js, text)
 
 
 class Api(Base):
@@ -431,8 +415,11 @@ class Api(Base):
         st, r = self.request("GET", "/api/catalog/info")
         self.assertEqual(set(r["installed"]), {"generic"})
         self.assertEqual(r["sources"]["off"]["license"], "ODbL 1.0")
-        st, r = self.request("POST", "/api/catalog", {"op": "set_url", "url": "http://x"})
-        self.assertEqual((st, r["error"]["$"]), (400, "cat.e.url"))
+        self.assertNotIn("url", r)
+        # the "Update from URL" operations no longer exist
+        for body in ({"op": "set_url", "url": "https://x"}, {"op": "update_url"}):
+            st, r = self.request("POST", "/api/catalog", body)
+            self.assertEqual((st, r["error"]["$"]), (400, "e.op_invalid"))
 
 
 if __name__ == "__main__":

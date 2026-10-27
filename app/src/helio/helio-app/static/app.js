@@ -2101,8 +2101,6 @@ function renderCatalog(c) {
   $("catalogImport").hidden = !ANDROID;
   $("catalogServerNote").hidden = ANDROID;
   $("catalogServerNote").textContent = t("cat.server_import");
-  if (document.activeElement !== $("catalogUrl")) $("catalogUrl").value = c.url;
-  $("catalogUrlUpdate").disabled = !c.url;
 }
 async function catalogOp(payload, btn, okMsg) {
   $("catalogErr").hidden = true;
@@ -2115,7 +2113,6 @@ async function catalogOp(payload, btn, okMsg) {
     showErr("catalogErr", e.message);
   } finally {
     b.disabled = false; b.textContent = label;
-    if (CATALOG) $("catalogUrlUpdate").disabled = !CATALOG.url;
   }
 }
 // answer of the app after "Import from file" (the file picker and the checks run on the phone)
@@ -2149,8 +2146,6 @@ $("catalogBench").addEventListener("click", async () => {
     $("catalogBenchOut").textContent = t("err.failed", { msg: e.message });
   } finally { b.disabled = false; }
 });
-$("catalogUrlSave").addEventListener("click", () => catalogOp({ op: "set_url", url: $("catalogUrl").value.trim() }, "catalogUrlSave", t("cat.url_saved")));
-$("catalogUrlUpdate").addEventListener("click", () => catalogOp({ op: "update_url" }, "catalogUrlUpdate", (r) => t("cat.imported", { n: r.rows, version: r.version })));
 
 /* ================= About: licences and attributions ================= */
 const ABOUT_SOFTWARE = [

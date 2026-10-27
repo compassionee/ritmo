@@ -296,7 +296,7 @@ class SleepFromSamples(unittest.TestCase):
 class NoFixedOffsets(unittest.TestCase):
     """No offset computed by hand: day lengths and local times come from zoneinfo (Python) or Intl (the page).
     Lines that really mean elapsed time (a duration, a cookie lifetime) say so with an "elapsed" comment."""
-    FILES = ["helio_app.py", "helio_science.py", "helio_transfer.py", "helio_catalog.py", "helio_catalog_fetch.py",
+    FILES = ["helio_app.py", "helio_science.py", "helio_transfer.py", "helio_catalog.py",
              "static/app.js", "static/i18n.js"]
     SUSPECT = re.compile(r"86400|86_400|864e5|86400000|getTimezoneOffset|time\.timezone|time\.altzone|utcoffset\(|"
                          r"\*\s*3600|3600\s*\*|//\s*3600|%\s*86400")
