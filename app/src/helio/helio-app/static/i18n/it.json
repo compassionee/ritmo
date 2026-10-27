@@ -228,6 +228,7 @@
  "e.items_count": "servono da 1 a {max} alimenti",
  "e.lang_invalid": "lingua non valida",
  "e.load_range": "zavorra non valida (0-{max} kg)",
+ "e.meal_catalog_unsaved": "un pasto tipo usa solo i tuoi alimenti: salva prima {names:list} tra i tuoi alimenti",
  "e.meal_exists": "esiste già un pasto tipo chiamato \"{name}\"",
  "e.meal_invalid": "pasto tipo non valido",
  "e.meal_not_found": "pasto tipo non trovato",
@@ -528,6 +529,15 @@
  "load.note": "Carico = TRIMP di Banister: ogni minuto di allenamento pesa di più quanto più il battito si avvicina al massimo. Non c'è un giudizio sul rapporto tra ultima settimana e ultimo mese: uno studio indipendente mostra che non predice gli infortuni e ne consiglia l'abbandono.",
  "load.very_high": "molto alto",
  "meal.breakfast": "Colazione",
+ "meal.catalog_ask": {
+  "one": "Salvare questo prodotto del database alimenti nei tuoi alimenti? {names}",
+  "other": "Salvare questi {n} prodotti del database alimenti nei tuoi alimenti? {names}"
+ },
+ "meal.catalog_saved": {
+  "one": "Pasto tipo salvato, {n} prodotto aggiunto ai tuoi alimenti",
+  "other": "Pasto tipo salvato, {n} prodotti aggiunti ai tuoi alimenti"
+ },
+ "meal.catalog_yes": "Salva nei miei e salva il pasto",
  "meal.default_name": "{meal} tipo",
  "meal.deleted": "Pasto tipo eliminato",
  "meal.dinner": "Cena",

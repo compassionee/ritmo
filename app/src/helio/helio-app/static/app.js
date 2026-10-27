@@ -1661,9 +1661,16 @@ function openRecipeEditor(rec, presetName = "", returnMeal = null) {
   recipePreview();
   openModal("recipeSheet");
 }
+// it.cat: community food of a diary entry (not among my foods), only in a saved meal made from the diary
 function addItemRow(box, it, listId, onChange) {
   const r = h("div", "it-row", null, box);
   const nm = h("input", "it-name", null, r); nm.type = "text"; nm.setAttribute("list", listId); nm.placeholder = t("ui.food.food"); nm.autocomplete = "off"; nm.value = it.name || "";
+  if (it.cat) {
+    r.cat = it.cat; r.classList.add("it-cat");
+    const tag = h("span", "src-tag", srcShort(it.cat.src)); nm.after(tag);
+    // a different name is another food: the row no longer points to the community one
+    nm.addEventListener("input", () => { if (r.cat && nm.value.trim() !== r.cat.name) { r.cat = null; r.classList.remove("it-cat"); tag.remove(); } });
+  }
   const g = h("input", "it-g", null, r); g.type = "number"; g.inputMode = "decimal"; g.min = "0.1"; g.max = "10000"; g.placeholder = t("unit.g"); g.value = it.g ?? "";
   const x = h("button", "pe-btn", "×", r); x.setAttribute("aria-label", t("common.remove"));
   x.addEventListener("click", () => { r.remove(); onChange(); });
@@ -1675,8 +1682,8 @@ function readItems(box, onlyBase) {
   for (const r of box.querySelectorAll(".it-row")) {
     const name = r.querySelector(".it-name").value.trim(), raw = r.querySelector(".it-g").value;
     if (!name && !raw) continue;
-    const f = name ? foodByName(name, onlyBase) : null, g = Number(String(raw).replace(",", "."));
-    if (!f || !(g > 0)) bad.push(name || t("food.row_no_name")); else items.push([f.id, g, f]);
+    const f = r.cat ? r.cat : name ? foodByName(name, onlyBase) : null, g = Number(String(raw).replace(",", "."));
+    if (!f || !(g > 0)) bad.push(name || t("food.row_no_name")); else items.push([r.cat ? { src: f.src, ref: f.ref } : f.id, g, f]);
   }
   return { items, bad };
 }
@@ -1698,12 +1705,15 @@ function openMealEditor(m, fromDiary = null) {
   $("mealName").value = m ? m.name : fromDiary ? t("meal.default_name", { meal: mealName(fromDiary.key) }) : "";
   const box = $("mealItems"); box.replaceChildren();
   const rows = m ? m.items : fromDiary ? fromDiary.entries.map((e) => {
-    const f = FOODS.foods.find((x) => x.id === e.food);
-    return { name: f ? f.name : e.name, g: e.g };
+    const s = e.src || {};
+    const f = FOODS.foods.find((x) => (e.food ? x.id === e.food : s.ref && x.origin && x.origin.src === s.src && x.origin.ref === s.ref));
+    if (f || e.food || !s.ref) return { name: f ? f.name : e.name, g: e.g };
+    // community food logged without saving it: it becomes one of my foods only if the user confirms
+    return { name: e.name, g: e.g, cat: { src: s.src, ref: s.ref, name: e.name, per100: e.per100 } };
   }) : [{ name: "", g: "" }];
   for (const it of rows) addItemRow(box, it, "foodNames", mealPreview);
   $("mealDelete").hidden = !m;
-  $("mealErr").hidden = true;
+  $("mealErr").hidden = true; $("mealCatAsk").hidden = true;
   for (const [id, key] of [["mealSave", "common.save"], ["mealDelete", "common.delete"]]) { $(id).disabled = false; $(id).textContent = t(key); }
   mealPreview();
   openModal("mealSheet");
@@ -2347,15 +2357,27 @@ $("recipeSave").addEventListener("click", async () => {
 });
 $("recipeDelete").addEventListener("click", () => nutSave("/api/food", { delete: recipeEdit.id }, t("recipe.deleted"), { sheet: "recipeSheet", btn: "recipeDelete", err: "recipeErr" }));
 $("mealAddItem").addEventListener("click", () => addItemRow($("mealItems"), {}, "foodNames", mealPreview));
-$("mealSave").addEventListener("click", () => {
+function saveMeal(withCatalog) {
+  $("mealCatAsk").hidden = true;
   const name = $("mealName").value.trim(), { items, bad } = readItems($("mealItems"), false);
   if (!name) return showErr("mealErr", t("v.meal_name"));
   if (bad.length) return showErr("mealErr", t("v.meal_items_bad", { names: bad.join(", ") }));
   if (!items.length) return showErr("mealErr", t("v.meal_item_one"));
+  // community foods: asked once, then saved among my foods (copies with their origin) together with the meal
+  const cats = [...new Map(items.filter((it) => typeof it[0] !== "string").map((it) => [`${it[0].src}:${it[0].ref}`, it[2].name])).values()];
+  if (cats.length && !withCatalog) {
+    $("mealErr").hidden = true;
+    $("mealCatText").textContent = t("meal.catalog_ask", { n: cats.length, names: cats.join(", ") });
+    $("mealCatAsk").hidden = false;
+    return;
+  }
   const meal = { id: mealEdit ? mealEdit.id : undefined, name, items: items.map(([id, g]) => [id, g]),
     meal: mealEdit ? mealEdit.meal : mealFrom ? mealFrom.key : null };
-  nutSave("/api/meal", { meal }, t("meal.saved"), { sheet: "mealSheet", btn: "mealSave", err: "mealErr" });
-});
+  nutSave("/api/meal", cats.length ? { meal, save_catalog: true, lang: I18N.lang() } : { meal },
+    cats.length ? t("meal.catalog_saved", { n: cats.length }) : t("meal.saved"), { sheet: "mealSheet", btn: "mealSave", err: "mealErr" });
+}
+$("mealSave").addEventListener("click", () => saveMeal(false));
+$("mealCatYes").addEventListener("click", () => saveMeal(true));
 $("mealDelete").addEventListener("click", () => nutSave("/api/meal", { delete: mealEdit.id }, t("meal.deleted"), { sheet: "mealSheet", btn: "mealDelete", err: "mealErr" }));
 
 let sx = null, sy = null;

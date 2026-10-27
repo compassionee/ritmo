@@ -3431,8 +3431,30 @@ def foods_load():
     return foods, meals
 
 
+FOOD_KEYS = ("id", "kind", "name", "portions", "updated", "per100", "origin", "barcode", "items", "cooked_g")
+MEAL_KEYS = ("id", "name", "meal", "items", "updated")
+
+
 def foods_save(foods, meals):
-    state_save("foods.json", {"foods": foods, "meals": meals})
+    """Writes the foods, recipes and saved meals (as foods_load reads them, after a change) into foods.json keeping
+    what this version does not know: entries it cannot read, fields it does not use, other top-level keys.
+    Unchanged entries stay exactly as in the file; a changed one gets its new values and keeps its unknown fields;
+    only an entry this version read and the caller removed is deleted."""
+    data = state_load("foods.json")
+    before = dict(zip(("foods", "meals"), foods_load()))
+    for part, new, known in (("foods", foods, FOOD_KEYS), ("meals", meals, MEAL_KEYS)):
+        raw = data.get(part) if isinstance(data.get(part), dict) else {}
+        for k in before[part]:
+            if k not in new:
+                raw.pop(k, None)
+        for k, rec in new.items():
+            old = raw.get(k)
+            if old is not None and before[part].get(k) == rec:
+                continue
+            extra = {f: v for f, v in old.items() if f not in known} if isinstance(old, dict) else {}
+            raw[k] = {**extra, **rec}
+        data[part] = raw
+    state_save("foods.json", data)
 
 
 def foods_add(rec):
@@ -3576,11 +3598,62 @@ def save_meal(body):
         slot = code(raw.get("meal"))
         if slot is not None and slot not in MEALS:
             raise UserError("e.meal_slot_invalid")
+        items = meal_catalog_items(raw.get("items"), foods, body.get("save_catalog") is True, body.get("lang"))
         rec = {"id": mid or new_id("m"), "name": name, "meal": slot,
-               "items": clean_items(raw.get("items"), foods, True), "updated": int(time.time())}
+               "items": clean_items(items, foods, True), "updated": int(time.time())}
         meals[rec["id"]] = rec
         foods_save(foods, meals)
     return {"ok": True, "id": rec["id"]}
+
+
+def meal_catalog_items(raw, foods, save, lang=None):
+    """Items of a saved meal made from the diary may name community foods ({"src", "ref"}) instead of an id: a
+    saved meal only uses the user's foods, so each one becomes a copy among them ("Save to my foods", with its
+    origin), or the copy already there. Only when the user confirmed it (save): never in silence. lang: the
+    names of the copies, in the language the page showed them."""
+    if not isinstance(raw, list):
+        return raw
+    keys, items = [], {}
+    for it in raw:
+        if not (isinstance(it, (list, tuple)) and len(it) == 2 and isinstance(it[0], dict)):
+            keys.append(None)
+            continue
+        c = it[0]
+        item = catalog_get(c.get("src"), c["ref"], lang) if isinstance(c.get("ref"), str) else None
+        if not item:
+            raise UserError("e.food_not_found")
+        keys.append((item["src"], item["ref"]))
+        items[keys[-1]] = item
+    if not items:
+        return raw
+    copies = {(f["origin"]["src"], f["origin"]["ref"]): k for k, f in foods.items() if f.get("origin")}
+    new = [it for key, it in items.items() if key not in copies]
+    if new and not save:
+        raise UserError("e.meal_catalog_unsaved", names=sorted(catalog_copy_name(it) for it in new))
+    if len(foods) + len(new) > FOODS_MAX:
+        raise UserError("e.foods_max", max=FOODS_MAX)
+    for it in new:
+        name = catalog_copy_name(it)
+        if any(f["name"].lower() == name.lower() for f in foods.values()):
+            raise UserError("e.food_exists", name=name)
+        rec = {"id": new_id("f"), "kind": "food", "name": name, "portions": [], "updated": int(time.time()),
+               "origin": {"src": it["src"], "ref": it["ref"], "version": it["version"] or "", "v": dict(it["per100"])},
+               "per100": clean_per100(it["per100"], fiber_optional=it["per100"].get("fiber") is None)}
+        try:
+            rec["portions"] = clean_portions(it.get("portions"))
+        except (ValueError, TypeError):
+            pass
+        if hc.clean_barcode(it.get("barcode")):
+            rec["barcode"] = hc.clean_barcode(it["barcode"])
+        foods[rec["id"]] = rec
+        copies[(it["src"], it["ref"])] = rec["id"]
+    return [[copies[k], it[1]] if k else it for k, it in zip(keys, raw)]
+
+
+def catalog_copy_name(item):
+    """Name of a copy among the user's foods, as "Save to my foods" proposes it: name (brand)."""
+    name = f"{item['name']} ({item['brand']})" if item.get("brand") else item["name"]
+    return " ".join(name.split())[:60]
 
 
 DIARY_FILE = re.compile(r"^diary-\d{4}-\d{2}\.json$")
@@ -3782,7 +3855,10 @@ def entry_source(e):
     """Source of a diary entry: a community catalog (entries added without saving the food) or the user's foods."""
     s = e.get("src")
     if isinstance(s, dict) and s.get("src") in hc.SOURCE_INFO:
-        return {"src": s["src"], "version": s.get("version")}
+        out = {"src": s["src"], "version": s.get("version")}
+        if isinstance(s.get("ref"), str):
+            out["ref"] = s["ref"]  # to make it a copy among the user's foods (saved meal from the diary)
+        return out
     return {"src": "user"}
 
 

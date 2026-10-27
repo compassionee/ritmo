@@ -236,5 +236,54 @@ class CatalogUI(UIBase):
         self.assertEqual(self.outside, [])
 
 
+    def test_saved_meal_from_a_diary_meal_with_community_foods(self):
+        # "Save as saved meal" on a meal with foods from the database: asked once, then saved as copies
+        oats = self.food("Oats", OATS)
+        off = lambda q: next(x for x in self.h.catalog_search(q, UI_LANG)["community"] if x["src"] == "off")
+        bis, apple = off("biscotti"), off("mela snack")
+        self.api("/api/diary", {"date": DAY.isoformat(), "op": "add", "meal": "breakfast", "food": oats, "g": 40})
+        for it, g in ((bis, 30), (apple, 100)):
+            self.api("/api/diary", {"date": DAY.isoformat(), "op": "add", "meal": "breakfast", "g": g,
+                                    "catalog": {"src": it["src"], "ref": it["ref"]}, "lang": UI_LANG})
+        self.h._daycache.clear()
+        self.page.reload()
+        self.cibo()
+        self.meal_card(self.L("meal.breakfast")).locator("button", has_text=self.L("nut.save_as_meal")).click()
+        rows = self.page.locator("#mealItems .it-row")
+        expect(rows).to_have_count(3)
+        expect(self.page.locator("#mealItems .it-row.it-cat")).to_have_count(2)
+        expect(rows.nth(1).locator(".src-tag")).to_have_text("OFF")
+        entries = self.diary()["entries"]
+        kcal = sum(e["v"]["kcal"] * e["g"] / 100 for e in entries)
+        expect(self.page.locator("#mealPreview")).to_contain_text(self.L("meal.preview", n=3, kcal=kcal))
+        self.page.click("#mealSave")
+        names = [e["name"] for e in entries[1:]]
+        ask = self.page.locator("#mealCatAsk")
+        expect(ask).to_be_visible()
+        expect(ask).to_contain_text(self.L("meal.catalog_ask", n=2, names=", ".join(names)))
+        expect(self.page.locator("#mealErr")).to_be_hidden()
+        self.assertNotIn("meals", json.loads((self.state / "foods.json").read_text()))  # nothing created in silence
+        self.page.click("#mealCatYes")
+        self.toast(self.L("meal.catalog_saved", n=2))
+        expect(self.page.locator("#mealSheet")).to_be_hidden()
+        data = json.loads((self.state / "foods.json").read_text())
+        copies = {f["origin"]["ref"]: f for f in data["foods"].values() if f.get("origin")}
+        self.assertEqual(sorted(copies), sorted([bis["ref"], apple["ref"]]))
+        self.assertEqual(copies[bis["ref"]]["name"], "Biscotti integrali (Marca)")
+        self.assertEqual(copies[bis["ref"]]["barcode"], "8001234567890")
+        (meal,) = data["meals"].values()
+        self.assertEqual(meal["items"], [[oats, 40], [copies[bis["ref"]]["id"], 30], [copies[apple["ref"]]["id"], 100]])
+        # a second saved meal from the same diary meal uses the copies: no question, no new foods
+        self.meal_card(self.L("meal.breakfast")).locator("button", has_text=self.L("nut.save_as_meal")).click()
+        expect(self.page.locator("#mealItems .it-row.it-cat")).to_have_count(0)
+        self.page.fill("#mealName", "Colazione 2")
+        self.page.click("#mealSave")
+        expect(self.page.locator("#mealSheet")).to_be_hidden()
+        expect(self.page.locator("#foodsCount")).to_contain_text(self.L("food.n_meals", n=2))
+        data = json.loads((self.state / "foods.json").read_text())
+        self.assertEqual((len(data["meals"]), sum(1 for f in data["foods"].values() if f.get("origin"))), (2, 2))
+        self.assertEqual(self.outside, [])
+
+
 if __name__ == "__main__":
     unittest.main()

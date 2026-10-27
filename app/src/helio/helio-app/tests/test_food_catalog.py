@@ -293,6 +293,150 @@ class DiaryFromCatalog(Base):
                              "catalog": {"src": "off", "ref": "nope"}})
 
 
+class SavedMealWithCatalogFoods(Base):
+    """"Save as saved meal" on a diary meal with community foods: they become copies among my foods only when
+    the user confirmed it (save_catalog), the copies already there are reused, nothing is half saved."""
+
+    def setUp(self):
+        super().setUp()
+        self.fish = self.h.catalog_search("branzino", "it")["community"][0]
+        self.apple = self.h.catalog_search("mela", "it")["community"][0]
+
+    def meal(self, items, **extra):
+        return self.h.save_meal({"meal": {"name": "Cena tipo", "meal": "dinner", "items": items}, "lang": "it", **extra})
+
+    def cref(self, it):
+        return {"src": it["src"], "ref": it["ref"]}
+
+    def test_refused_without_confirmation_and_nothing_written(self):
+        before = (self.state / "foods.json").read_bytes()
+        with self.assertRaises(self.h.UserError) as e:
+            self.meal([["f1", 40], [self.cref(self.fish), 200], [self.cref(self.apple), 150]])
+        self.assertEqual(e.exception.msg["$"], "e.meal_catalog_unsaved")
+        self.assertEqual(e.exception.msg["names"], ["Branzino", "Mela"])
+        self.assertEqual((self.state / "foods.json").read_bytes(), before)
+
+    def test_confirmed_creates_copies_with_origin(self):
+        res = self.meal([["f1", 40], [self.cref(self.fish), 200], [self.cref(self.apple), 150]], save_catalog=True)
+        raw = self.raw_foods()
+        copies = {f["name"]: f for f in raw["foods"].values() if f.get("origin")}
+        self.assertEqual(sorted(copies), ["Branzino", "Mela"])
+        fish = copies["Branzino"]
+        self.assertEqual((fish["origin"]["src"], fish["origin"]["ref"]), (self.fish["src"], self.fish["ref"]))
+        self.assertEqual(fish["per100"]["kcal"], round(self.fish["per100"]["kcal"], 2))
+        self.assertEqual(raw["meals"][res["id"]]["items"], [["f1", 40.0], [fish["id"], 200.0], [copies["Mela"]["id"], 150.0]])
+
+    def test_existing_copy_is_reused_without_asking(self):
+        fid = self.h.save_food({"food": {"name": "Il mio branzino", "per100": self.fish["per100"],
+                                         "origin": self.cref(self.fish)}})["id"]
+        res = self.meal([["f1", 40], [self.cref(self.fish), 200]])
+        raw = self.raw_foods()
+        self.assertEqual(raw["meals"][res["id"]]["items"][1], [fid, 200.0])
+        self.assertEqual(sum(1 for f in raw["foods"].values() if f.get("origin")), 1)
+
+    def test_name_taken_by_another_food_saves_nothing(self):
+        self.h.save_food({"food": {"name": "Mela", "per100": {"protein": 0.3, "carbs": 11, "fat": 0.2, "fiber": 2}}})
+        before = (self.state / "foods.json").read_bytes()
+        with self.assertRaises(self.h.UserError) as e:
+            self.meal([[self.cref(self.fish), 200], [self.cref(self.apple), 150]], save_catalog=True)
+        self.assertEqual(e.exception.msg["$"], "e.food_exists")
+        self.assertEqual((self.state / "foods.json").read_bytes(), before)
+
+    def test_unknown_community_food(self):
+        with self.assertRaises(self.h.UserError) as e:
+            self.meal([["f1", 40], [{"src": "off", "ref": "nope"}, 100]], save_catalog=True)
+        self.assertEqual(e.exception.msg["$"], "e.food_not_found")
+
+    def test_diary_entry_gives_the_page_its_catalog_id(self):
+        self.h.diary_op({"date": DAY.isoformat(), "op": "add", "meal": "dinner", "g": 200,
+                         "catalog": self.cref(self.fish), "lang": "it"})
+        (m,) = [m for m in self.h.nutrition_day(DAY)["meals"] if m["key"] == "dinner"]
+        self.assertEqual(m["entries"][0]["src"], {"src": self.fish["src"], "ref": self.fish["ref"], "version": "2026-10-21"})
+
+
+UNKNOWN_JSON = """{"format": 3, "sync": {"device": "x"},
+  "meals": {"m1": {"name": "Colazione tipo", "meal": "breakfast", "items": [["f1", 40], ["r1", 100]], "id": "m1",
+                   "color": "green", "order": 2},
+            "m9": {"name": "", "items": "not a list", "future": true}},
+  "foods": {
+    "f1": {"kind": "food", "name": "Oats", "id": "f1", "portions": [["1 cup", 40]],
+           "per100": {"kcal": 372, "protein": 13.5, "carbs": 58.7, "fat": 7.0, "fiber": 10.0}, "updated": 1,
+           "note": "a field this version does not know", "tags": ["cereal"]},
+    "f2": {"kind": "food", "name": "Milk", "id": "f2", "portions": [],
+           "per100": {"kcal": 64, "protein": 3.3, "carbs": 4.9, "fat": 3.6, "fiber": 0}, "updated": 1, "fav": true},
+    "r1": {"kind": "recipe", "name": "Porridge", "id": "r1", "portions": [], "items": [["f1", 50]],
+           "cooked_g": 250, "updated": 2, "steps": ["boil", "stir"]},
+    "broken": {"kind": "food", "name": "", "per100": {}, "keep": "me"},
+    "z1": {"kind": "drink", "name": "Kind from a newer version", "ml": 200}
+  }
+}
+"""  # lang: it
+
+
+class UnknownFieldsKept(Base):
+    """Every write of foods.json (saved meals, foods, recipes, deletions) keeps what this version does not know:
+    unknown fields of foods, recipes and saved meals, entries it cannot read, other top-level keys."""
+
+    def setUp(self):
+        super().setUp()
+        (self.state / "foods.json").write_text(UNKNOWN_JSON)
+        self.orig = json.loads(UNKNOWN_JSON)
+
+    def untouched(self, *changed):
+        """Every entry of the original file except the changed ones is identical, and the top-level keys too."""
+        raw = self.raw_foods()
+        self.assertEqual((raw["format"], raw["sync"]), (3, {"device": "x"}))
+        for part in ("foods", "meals"):
+            for k, v in self.orig[part].items():
+                if k not in changed:
+                    self.assertEqual(raw[part].get(k), v, f"{part}/{k}")
+        return raw
+
+    def test_save_new_meal(self):
+        res = self.h.save_meal({"meal": {"name": "Cena tipo", "meal": "dinner", "items": [["f1", 40], ["f2", 200]]}})
+        raw = self.untouched()
+        self.assertEqual(raw["meals"][res["id"]]["items"], [["f1", 40.0], ["f2", 200.0]])
+
+    def test_edit_meal_keeps_its_unknown_fields(self):
+        self.h.save_meal({"meal": {"id": "m1", "name": "Colazione grande", "meal": "breakfast", "items": [["f1", 80]]}})
+        m = self.untouched("m1")["meals"]["m1"]
+        self.assertEqual((m["name"], m["items"], m["color"], m["order"]), ("Colazione grande", [["f1", 80.0]], "green", 2))
+
+    def test_saved_meal_with_community_foods(self):
+        fish = self.h.catalog_search("branzino", "it")["community"][0]
+        self.h.save_meal({"meal": {"name": "Cena", "meal": "dinner", "items": [["f2", 100], [{"src": fish["src"], "ref": fish["ref"]}, 200]]},
+                          "save_catalog": True, "lang": "it"})
+        raw = self.untouched()
+        self.assertEqual(sum(1 for f in raw["foods"].values() if f.get("origin")), 1)
+
+    def test_delete_meal(self):
+        self.h.save_meal({"delete": "m1"})
+        raw = self.untouched("m1")
+        self.assertNotIn("m1", raw["meals"])
+
+    def test_edit_food_and_recipe_keep_their_unknown_fields(self):
+        self.h.save_food({"food": {"id": "f1", "name": "Oats", "per100": {"protein": 14, "carbs": 58.7, "fat": 7, "fiber": 10}}})
+        self.h.save_food({"food": {"id": "r1", "kind": "recipe", "name": "Porridge", "items": [["f1", 60], ["f2", 200]],
+                                   "cooked_g": 300}})
+        raw = self.untouched("f1", "r1")
+        f1, r1 = raw["foods"]["f1"], raw["foods"]["r1"]
+        self.assertEqual((f1["per100"]["protein"], f1["note"], f1["tags"]), (14.0, self.orig["foods"]["f1"]["note"], ["cereal"]))
+        self.assertEqual((r1["items"], r1["cooked_g"], r1["steps"]), ([["f1", 60.0], ["f2", 200.0]], 300.0, ["boil", "stir"]))
+
+    def test_known_field_removed_is_removed(self):
+        self.h.save_food({"food": {"name": "Pane", "per100": {"protein": 8, "carbs": 50, "fat": 1, "fiber": 3},
+                                   "barcode": "8001234567890"}})
+        fid = next(k for k, f in self.raw_foods()["foods"].items() if f.get("name") == "Pane")
+        self.h.save_food({"food": {"id": fid, "name": "Pane", "per100": {"protein": 8, "carbs": 50, "fat": 1, "fiber": 3},
+                                   "barcode": ""}})
+        self.assertNotIn("barcode", self.untouched(fid)["foods"][fid])
+
+    def test_delete_food(self):
+        self.h.save_food({"delete": "f2"})
+        raw = self.untouched("f2")
+        self.assertNotIn("f2", raw["foods"])
+
+
 class NoNetwork(Base):
     def test_search_and_barcode_do_not_touch_the_network(self):
         attempts = []

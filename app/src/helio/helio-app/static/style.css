@@ -521,6 +521,10 @@ details.nut-opt summary { cursor: pointer; color: var(--blue); font-size: 13.5px
 .it-row { display: grid; grid-template-columns: 1fr 86px auto; gap: 6px; align-items: center; }
 .it-row input { min-width: 0; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2);
   color: var(--text); font: inherit; color-scheme: dark; }
+.it-row.it-cat { grid-template-columns: 1fr auto 86px auto; }
+.it-row.it-cat .src-tag { margin-left: 0; }
+.ask-box { margin-top: 10px; padding: 12px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); }
+.ask-box p { margin: 0 0 10px; font-size: 13.5px; line-height: 1.45; }
 .chips.wrap { flex-wrap: wrap; overflow: visible; margin-top: 0; }
 .check-row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .check-row input { width: 20px; height: 20px; accent-color: var(--blue); }

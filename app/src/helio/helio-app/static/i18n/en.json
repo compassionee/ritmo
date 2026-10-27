@@ -228,6 +228,7 @@
  "e.items_count": "1 to {max} foods are needed",
  "e.lang_invalid": "invalid language",
  "e.load_range": "invalid added load (0-{max} kg)",
+ "e.meal_catalog_unsaved": "a saved meal uses only your foods: save first {names:list} among your foods",
  "e.meal_exists": "a saved meal called \"{name}\" already exists",
  "e.meal_invalid": "invalid saved meal",
  "e.meal_not_found": "saved meal not found",
@@ -528,6 +529,15 @@
  "load.note": "Load = Banister's TRIMP: each training minute weighs more the closer the heart rate is to its maximum. There is no judgement on the ratio between the last week and the last month: an independent study shows it does not predict injuries and recommends dropping it.",
  "load.very_high": "very high",
  "meal.breakfast": "Breakfast",
+ "meal.catalog_ask": {
+  "one": "Save this product from the food database among your foods? {names}",
+  "other": "Save these {n} products from the food database among your foods? {names}"
+ },
+ "meal.catalog_saved": {
+  "one": "Saved meal saved, {n} product added to your foods",
+  "other": "Saved meal saved, {n} products added to your foods"
+ },
+ "meal.catalog_yes": "Save among my foods and save the meal",
  "meal.default_name": "Usual {meal}",
  "meal.deleted": "Saved meal deleted",
  "meal.dinner": "Dinner",
