@@ -200,32 +200,31 @@ when `HELIO_UI_PYTHON` points to a Python with Playwright installed. All test da
 <details>
 <summary>How the APK gets into Releases</summary>
 
-The workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) builds the signed
-release APK, runs `run-tests.sh` on it and publishes it in Releases with its SHA-256.
+**Usual way (the release key never leaves the build machine):**
 
-**Once:** add the release key as repository secrets (*Settings → Secrets and variables → Actions*).
-Use the **same key** as the installed app, otherwise Android refuses the update.
+1. Build and test the release APK locally with your release key (`./gradlew assembleHelioRelease`,
+   then `app/src/helio/run-tests.sh` on the APK), with the `versionCode` of the `helio` flavor
+   increased.
+2. Push the commit, then on GitHub open *Releases → Draft a new release*, create the tag (for example
+   `v267`) on that commit and attach the APK renamed `Ritmo-v267.apk`.
+3. In the notes, write the SHA-256 of the APK and of the signing certificate
+   (`apksigner verify --print-certs`), so anyone can check the download.
+
+**Optional, building on GitHub:** the workflow [`.github/workflows/release.yml`](.github/workflows/release.yml)
+builds the signed APK, runs `run-tests.sh` on it and publishes it with its SHA-256. It runs only by
+hand (*Actions → Release APK → Run workflow*, with the tag name) and needs the release key as
+repository secrets (*Settings → Secrets and variables → Actions*). Use the **same key** as the
+installed app, otherwise Android refuses the update.
 
 | Secret | Value |
 |---|---|
-| `RITMO_KEYSTORE_BASE64` | the keystore encoded with base64 (`base64 -w0 release.p12`; on Windows `certutil -encode`) |
+| `RITMO_KEYSTORE_BASE64` | the keystore encoded with base64 (`base64 -w0 release.p12`) |
 | `RITMO_STORE_PASSWORD` | keystore password |
 | `RITMO_KEY_ALIAS` | key alias |
 | `RITMO_KEY_PASSWORD` | key password |
 
 If the installed app uses another package, set the repository variable `RITMO_APPLICATION_ID`.
-
-**Every release:** increase `versionCode` of the `helio` flavor in `app/build.gradle`, commit, then
-push a tag:
-
-```
-git tag v268
-git push origin v268
-```
-
-Or run *Release APK* by hand from the Actions tab with the tag name. If the build or the tests fail,
-nothing is published. An APK built locally can also be attached by hand: *Releases → Draft a new
-release*.
+Without the secrets the workflow stops before building and publishes nothing.
 
 </details>
 

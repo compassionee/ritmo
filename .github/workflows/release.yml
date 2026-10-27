@@ -1,7 +1,7 @@
 # Builds the signed Ritmo APK and publishes it in GitHub Releases.
 #
-# Runs when a tag starting with "v" is pushed (for example v267), or by hand from the Actions tab
-# with the tag to publish. The APK is signed with the release key stored in the repository secrets,
+# Runs only by hand from the Actions tab, with the tag to publish (for example v267): releases made
+# by hand with an APK built locally do not start it. The APK is signed with the release key stored in the repository secrets,
 # so installs from the release update in place:
 #   RITMO_KEYSTORE_BASE64   the keystore (.p12 or .jks) encoded with base64
 #   RITMO_STORE_PASSWORD    keystore password
@@ -12,8 +12,6 @@
 name: Release APK
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
@@ -24,7 +22,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  group: release-${{ github.event.inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -32,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      TAG: ${{ github.event.inputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
