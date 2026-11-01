@@ -17,7 +17,7 @@ const APP = readFileSync(join(HERE, "../helio-app/static/app.js"), "utf8");
 const BLOCK = APP.slice(APP.indexOf("// view:begin"), APP.indexOf("// view:end"));
 const TITLES = { today: "Oggi", fitness: "Fitness", sleep: "Sonno", food: "Alimentazione", health: "Salute", profile: "Profilo e metodo" };
 
-function page({ android = true, restore = null, sheets = [] } = {}) {
+function page({ android = true, restore = null, sheets = [], details = [] } = {}) {
   const saved = [];
   const timers = [];
   const listeners = {};
@@ -30,7 +30,10 @@ function page({ android = true, restore = null, sheets = [] } = {}) {
       HELIO_SAVE_VIEW: (v) => saved.push(JSON.parse(JSON.stringify(v))),
       addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); },
     },
-    document: { querySelectorAll: (sel) => (sel === ".sheet" ? sheets : []) },
+    document: {
+      querySelectorAll: (sel) => (sel === ".sheet" ? sheets : sel === "details.more" ? details
+        : sel === "details.more[open]" ? details.filter((d) => d.open) : []),
+    },
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
     clearTimeout: () => {},
   };
@@ -114,4 +117,34 @@ test("on the server no view and no Back", () => {
   assert.equal(p.saved.length, 0);
   assert.match(APP, /\n  const restoreY = ANDROID \? viewInstall\(\) : null;\n/);
   assert.equal(APP.match(/viewInstall\(\)/g).length, 2);
+});
+
+// a "Details" block: closed, with its name and a toggle listener
+function details(name) {
+  const d = { dataset: { more: name }, open: false, listeners: [] };
+  d.addEventListener = (type, fn) => { if (type === "toggle") d.listeners.push(fn); };
+  d.toggle = () => { d.open = !d.open; d.listeners.forEach((fn) => fn()); };
+  return d;
+}
+
+test("open Details: saved with the view when they change and opened again on reopening", () => {
+  const cum = details("cum"), comp = details("comp"), bad = details("Bad name");
+  const p = page({ details: [cum, comp, bad] });
+  p.api.viewInstall();
+  comp.toggle();
+  cum.toggle();
+  bad.toggle();
+  assert.equal(JSON.stringify(p.saved.at(-1)), JSON.stringify({ tab: "today", date: "2026-10-13", y: 0, more: ["comp", "cum"] }));
+  cum.toggle();
+  assert.equal(JSON.stringify(p.saved.at(-1).more), JSON.stringify(["comp"]));
+  const a = details("cum"), b = details("comp");
+  const q = page({ restore: { tab: "food", more: ["cum", "x y", 3, "missing"] }, details: [a, b] });
+  q.api.viewInstall();
+  assert.equal(a.open, true);
+  assert.equal(b.open, false);
+  for (const more of ["cum", null, { cum: 1 }]) {
+    const c = details("cum");
+    page({ restore: { tab: "food", more }, details: [c] }).api.viewInstall();
+    assert.equal(c.open, false, JSON.stringify(more));
+  }
 });

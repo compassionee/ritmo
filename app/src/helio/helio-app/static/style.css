@@ -161,10 +161,22 @@ main { max-width: 560px; margin: 0 auto; padding: 0 14px; }
 .s-cardio-over { stroke: #c6dafc; }
 
 /* comments */
-.insight { display: flex; flex-direction: column; gap: 6px; }
-.insight h3 { margin: 4px 0 0; font-size: 18px; font-weight: 500; line-height: 1.3; }
-.insight p { margin: 0; color: var(--muted); }
-.insight .go { align-self: stretch; margin-top: 8px; padding: 10px; border-radius: 99px; background: var(--surface-2); color: var(--blue); font-weight: 600; font-size: 14px; text-align: center; }
+/* Today's comments: one row each (section · title · value), tapping goes to the section */
+.ins-card { padding-top: 6px; padding-bottom: 6px; }
+.ins-rows { display: flex; flex-direction: column; }
+.ins-row { display: flex; align-items: center; gap: 8px; min-height: 48px; width: 100%; text-align: left; font-size: 14.5px;
+  border-bottom: 1px solid var(--line); }
+.ins-row:last-child { border-bottom: 0; }
+.ins-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.ins-row.tone-good .ins-dot { background: var(--green); } .ins-row.tone-warn .ins-dot { background: var(--amber); }
+.ins-row.tone-info .ins-dot { background: var(--blue); }
+.ins-tag { flex: none; color: var(--muted); font-size: 13px; }
+.ins-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ins-val { flex: none; font-weight: 600; }
+.ins-go { flex: none; color: var(--faint); font-size: 20px; line-height: 1; }
+.ins-card details.more { margin-top: 0; }
+.stat .vendor { align-self: flex-start; margin-top: 6px; white-space: normal; }
+.stat details.more > summary { min-height: 44px; }
 
 /* statistics */
 .stat { display: flex; flex-direction: column; gap: 3px; }
@@ -208,6 +220,8 @@ svg .in-bar { fill: #0d0f12; font-weight: 700; }
 
 /* activity */
 .workout { padding: 0; overflow: hidden; }
+.workout > details.more { margin: 0 16px; }
+.workout > details.more > .note { margin-bottom: 12px; }
 .w-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; width: 100%; text-align: left; }
 .w-ico { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--teal-d); color: var(--teal); }
 .w-ico svg { width: 24px; height: 24px; }
@@ -255,6 +269,15 @@ svg .in-bar { fill: #0d0f12; font-weight: 700; }
 .hl .bar i { background: var(--purple); }
 .hl.bad .bar i { background: var(--amber); }
 .hl .hl-src { font-size: 11.5px; color: var(--faint); margin-top: 3px; }
+/* key points of the night: the row is the summary of its own Details (reference and sources) */
+.highlights { gap: 0; }
+details.more.hl-row { margin-top: 0; border-top: 0; border-bottom: 1px solid var(--line); }
+details.more.hl-row:last-child { border-bottom: 0; }
+details.more.hl-row > summary { gap: 8px; color: var(--text); font-size: 14.5px; }
+details.more.hl-row > summary b { font-weight: 500; flex: 1; min-width: 0; }
+details.more.hl-row > summary .hl-val { color: var(--muted); font-size: 13.5px; white-space: nowrap; }
+details.more.hl-row > summary::after { margin-left: 4px; }
+details.more.hl-row .hl-src { font-size: 11.5px; color: var(--faint); margin: 4px 0 10px; }
 
 /* health */
 .vit-box { background: var(--surface-2); border-radius: 18px; padding: 14px 14px 8px; margin-top: 14px; }
@@ -374,13 +397,14 @@ body.noscroll { overflow: hidden; }
 .advice.a-follow { background: var(--green-d); } .advice.a-follow b { color: var(--green); }
 .advice.a-light { background: #4a3a1c; } .advice.a-light b { color: var(--amber); }
 .advice .h-src { margin-top: 2px; }
+.advice.a-collecting { background: none; padding: 2px 0; }  /* still collecting: a discreet line */
+.advice.a-collecting b { font-size: 13.5px; font-weight: 500; color: var(--muted); }
 .plan > .w-btn { align-self: flex-start; margin-top: 8px; }
 
 /* sources: conflicts of interest and manufacturer algorithms */
 .coi { display: inline-block; margin-left: 6px; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 99px; white-space: nowrap; }
 .coi.warn { background: #4a3a1c; color: var(--amber); }
 .zepp { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 99px; background: var(--surface-3); color: var(--muted); white-space: nowrap; }
-.zepp-note { margin-top: -4px; }
 .src-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .src-row { display: flex; flex-direction: column; gap: 2px; padding-left: 10px; border-left: 3px solid var(--green-d); font-size: 13.5px; }
 .src-row small { color: var(--faint); font-size: 12px; }
@@ -432,6 +456,9 @@ body.noscroll { overflow: hidden; }
 .sheet-row input[type="date"] { flex: none; width: 160px; text-align: left; }
 .set-x, .pe-btn { width: 34px; height: 34px; flex: none; border-radius: 50%; background: var(--surface-3); color: var(--muted); font-size: 18px; line-height: 1; }
 .add-btn.small { padding: 8px 12px; font-size: 13px; border-radius: 14px; align-self: flex-start; }
+.add-btn.small span:not(:first-child) { font-size: inherit; }  /* the label as the other "Add" buttons; only "+" is big */
+#foodsCard .export-btns { flex-wrap: nowrap; }
+#foodsCard .export-btns .add-btn.small { flex: 1 1 0; min-width: 0; justify-content: center; padding: 8px 6px; white-space: nowrap; }
 
 /* plan and weight */
 .sheet-row.col { flex-direction: column; align-items: stretch; gap: 6px; }
@@ -491,6 +518,7 @@ details.src-all summary { cursor: pointer; color: var(--blue); font-size: 14px; 
 .checks { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 .chk { display: flex; flex-direction: column; gap: 3px; padding-top: 10px; border-top: 1px solid var(--line); }
 .chk .row b { font-weight: 500; font-size: 15px; }
+.chk .row .pill { white-space: normal; text-align: right; }  /* long labels wrap at 360 px */
 .chk-val { font-size: 13.5px; color: var(--text); }
 .chk-target { font-size: 12.5px; color: var(--faint); }
 .chk p { margin: 2px 0 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
@@ -549,3 +577,61 @@ details.nut-opt summary { cursor: pointer; color: var(--blue); font-size: 13.5px
 .about-list { list-style: none; padding: 0; margin: 6px 0 14px; display: grid; gap: 10px; font-size: 13.5px; }
 .about-list small { display: block; color: var(--muted); }
 .about-list a { color: var(--blue, #8ab4f8); word-break: break-all; }
+
+/* "Details": the same expandable block in every card, closed by default, open state kept in the view */
+details.more { margin-top: 10px; border-top: 1px solid var(--line); }
+details.more > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; list-style: none;
+  color: var(--muted); font-size: 13.5px; font-weight: 500; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::after { content: "▾"; margin-left: auto; color: var(--faint); }
+details.more[open] > summary::after { content: "▴"; }
+details.more > .note:first-of-type { margin-top: 0; }
+.judge { margin: 6px 0 0; font-size: 14px; color: var(--text); line-height: 1.4; }
+.pills { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+
+/* cumulative balance and composition estimate */
+.cum-switch button { min-height: 44px; padding: 4px; font-size: 12.5px; line-height: 1.2; }
+#cumSinceRow { margin-top: 8px; }
+#cumPeriod { display: block; margin-top: 8px; }
+#cumBody .row.big { align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+svg .cum-line { stroke: #b5d98a; }
+svg .cum-band { fill: rgba(181,217,138,.16); }
+svg .cum-zero { stroke: var(--muted); stroke-width: 1; }
+svg .cum-out { fill: var(--faint); }
+.sw.cum { background: #b5d98a; } .sw.cum-band { background: rgba(181,217,138,.35); } .sw.cum-out { background: var(--faint); border-radius: 50%; }
+.comp-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.comp-grid > div { display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border-radius: 14px; padding: 10px; min-width: 0; }
+.comp-grid b { font-size: 16px; white-space: nowrap; }
+.comp-grid small { font-size: 11.5px; overflow-wrap: anywhere; }
+.comp-energy { margin-top: 10px; font-size: 14px; }
+.comp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.comp-chips .chip-st { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 10px; border-radius: 99px;
+  background: var(--surface-2); font-size: 13px; }
+.comp-chips .chip-st .st { font-weight: 700; }
+.comp-chips .chip-st.ok .st { color: var(--green); }
+.comp-chips .chip-st.warn { background: #3a3220; }
+.comp-chips .chip-st.warn .st { color: var(--amber); }
+
+/* readiness: the reasons as chips */
+.reason-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.reason-chips .reason { padding: 5px 10px; border-radius: 99px; background: var(--surface-2); font-size: 13px; color: var(--text); }
+.hcard.waiting h4 { margin: 0 0 4px; }
+.hcard.waiting .h-sub { margin: 0 0 6px; font-size: 13.5px; }
+.hcard.waiting details.hl-row .bandbar { margin-top: 8px; }
+.hcard.waiting details.hl-row .h-text { margin-bottom: 4px; }
+
+/* nutrient checks: the row is the summary of its own Details */
+/* always the same layout: name and value on the first line, the status pill below */
+details.more.chk-row > summary { display: grid; grid-template-columns: 1fr auto auto; column-gap: 8px; row-gap: 4px;
+  align-items: center; color: var(--text); font-size: 14.5px; padding: 6px 0; }
+.chk-row > summary b { font-weight: 500; grid-column: 1; grid-row: 1; }
+.chk-row > summary .chk-val { color: var(--muted); font-size: 13px; grid-column: 2; grid-row: 1; text-align: right; }
+details.more.chk-row > summary::after { grid-column: 3; grid-row: 1; }
+.chk-row > summary .pill { grid-column: 1 / -1; grid-row: 2; justify-self: start; white-space: normal; }
+details.more.chk-row { margin-top: 0; border-top: 0; }
+details.more.chk-row > p { margin: 2px 0 6px; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.chk { padding-top: 0; }
+/* usage hint: the (i) icon after the first use */
+.complete-row { display: flex; align-items: center; gap: 8px; }
+.complete-row .w-btn { flex: 1; }
+.info-btn { width: 44px; height: 44px; border-radius: 50%; color: var(--muted); font-size: 18px; flex: none; }

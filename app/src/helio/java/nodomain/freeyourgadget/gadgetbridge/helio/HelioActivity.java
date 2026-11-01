@@ -536,7 +536,7 @@ public class HelioActivity extends Activity {
         return o;
     }
 
-    /** "helio_transfer.TransferError: archivio non leggibile" -> "archivio non leggibile" */
+    /** "helio_transfer.TransferError: unreadable archive" -> "unreadable archive" */
     @NonNull
     static String pythonMessage(@NonNull final PyException e) {
         final String message = String.valueOf(e.getMessage());

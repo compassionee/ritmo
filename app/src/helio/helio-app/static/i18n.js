@@ -4,7 +4,11 @@
 // numbers formatted by Intl in the chosen language. Changing language does not reload data: it redraws.
 //
 // Placeholders: {name} or {name:format}. Formats: 0, 1, 2 (decimals), int, time (epoch seconds),
-// date, dateshort, datelong, weekday, weekdayshort, month, dur (minutes), pct, list, raw.
+// date, dateshort, datelong, weekday, weekdayshort, month, dur (minutes), pct, list, raw, signed (integer with
+// "+" or the typographic minus "−"); a preposition before a date, for Italian, with its elision:
+// il_, dal_, al_, del_ + date, datelong, dateshort, month; with the month alone the simple preposition.  lang: it
+// Examples: "dal 5 marzo", "dall'11 marzo", "l'8 aprile", "da aprile 2026".  lang: it
+// Numbers are always grouped (useGrouping "always": "2.374" also in Italian).
 // Plurals: the value is an object {"one": ..., "other": ...} chosen by the parameter n.
 const I18N = (() => {
   const LANGS = ["it", "en"];
@@ -39,9 +43,28 @@ const I18N = (() => {
     return LOCALES[lang];
   };
 
-  function num(v, digits) {
+  function num(v, digits, fixed = false) {
     if (v == null || Number.isNaN(Number(v))) return "–";
-    return Number(v).toLocaleString(locale(), { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+    return Number(v).toLocaleString(locale(), { maximumFractionDigits: digits, minimumFractionDigits: fixed ? digits : 0,
+      useGrouping: "always" });
+  }
+
+  // Italian elision of the article before a word or number read with a vowel: uno, otto, undici, ottanta...;
+  // aprile, agosto, ottobre ("diciotto" does not elide)
+  const ELIDED = { il: "l'", dal: "dall'", al: "all'", del: "dell'" };
+  function elides(text) {
+    const m = /^(\d+)/.exec(text);
+    if (m) { const n = Number(m[1]); return n === 1 || n === 8 || n === 11 || (n >= 80 && n <= 89); }
+    return /^[aeiouàèéìòù]/i.test(text);  // lang: it
+  }
+  // with a month and year and no day the simple preposition is used: "da aprile 2026", "ad aprile", "di marzo"  lang: it
+  const SIMPLE = { il: "", dal: "da", al: "a", del: "di" };
+  function withPreposition(prep, text, month = false) {
+    if (month) {
+      const p = prep === "al" && /^a/i.test(text) ? "ad" : SIMPLE[prep];
+      return p ? `${p} ${text}` : text;
+    }
+    return elides(text) ? `${ELIDED[prep]}${text}` : `${prep} ${text}`;
   }
   const isoDate = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(Date.UTC(y, m - 1, d, 12)); };
   const dateFmt = (s, o) => isoDate(s).toLocaleDateString(locale(), { timeZone: "UTC", ...o });
@@ -56,6 +79,8 @@ const I18N = (() => {
   function format(v, spec) {
     if (v == null) return "–";
     if (v && typeof v === "object" && !Array.isArray(v)) return tx(v);
+    const prep = /^(il|dal|al|del)_(date|datelong|dateshort|month)$/.exec(spec || "");  // lang: it
+    if (prep) return withPreposition(prep[1], format(v, prep[2]), prep[2] === "month");
     switch (spec) {
       case "0": case "int": return num(v, 0);
       case "1": return num(v, 1);
@@ -69,6 +94,7 @@ const I18N = (() => {
       case "month": return dateFmt(v, { month: "long", year: "numeric" });
       case "dur": return dur(v);
       case "pct": return `${num(v, 0)}%`;
+      case "signed": { const r = Math.round(Number(v)); return r > 0 ? `+${num(r, 0)}` : r < 0 ? `−${num(-r, 0)}` : "0"; }
       case "list": return list(v);
       case "raw": return String(v);
       default:
@@ -137,7 +163,7 @@ const I18N = (() => {
 
   return {
     LANGS, t, tx, set, apply, list, dur,
-    num: (v, d = 1) => num(v, d),
+    num: (v, d = 1, fixed = false) => num(v, d, fixed),
     fmt: format,
     lang: () => lang,
     choice: () => choice,

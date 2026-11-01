@@ -23,6 +23,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.webkit.WebViewAssetLoader;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -74,6 +75,8 @@ public class HelioWebRouter {
     private static final Pattern VIEW_TAB = Pattern.compile("^[a-z]{1,16}$");
     private static final Pattern VIEW_DATE = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
     static final int MAX_VIEW_SCROLL = 1_000_000;
+    private static final Pattern VIEW_MORE = Pattern.compile("^[a-z][a-z0-9_]{0,23}$");
+    static final int MAX_VIEW_MORE = 32;
 
     public enum Navigation {
         /** An app page: load it in the WebView. */
@@ -233,8 +236,9 @@ public class HelioWebRouter {
     }
 
     /**
-     * The view, rebuilt only from valid fields: a lowercase section name, a yyyy-MM-dd day and a
-     * scroll offset. Null when nothing valid is left. app.js checks the values again.
+     * The view, rebuilt only from valid fields: a lowercase section name, a yyyy-MM-dd day, a
+     * scroll offset and the names of the open "Details" (at most 32, short lowercase names). Null when
+     * nothing valid is left. app.js checks the values again.
      */
     @Nullable
     static String cleanView(@Nullable final JSONObject in) {
@@ -254,6 +258,19 @@ public class HelioWebRouter {
             final Object y = in.opt("y");
             if (y instanceof Integer && (Integer) y >= 0 && (Integer) y <= MAX_VIEW_SCROLL) {
                 out.put("y", y);
+            }
+            final JSONArray more = in.optJSONArray("more");
+            if (more != null) {
+                final JSONArray kept = new JSONArray();
+                for (int i = 0; i < more.length() && kept.length() < MAX_VIEW_MORE; i++) {
+                    final Object name = more.opt(i);
+                    if (name instanceof String && VIEW_MORE.matcher((String) name).matches()) {
+                        kept.put(name);
+                    }
+                }
+                if (kept.length() > 0) {
+                    out.put("more", kept);
+                }
             }
             return out.length() > 0 ? out.toString() : null;
         } catch (final JSONException e) {

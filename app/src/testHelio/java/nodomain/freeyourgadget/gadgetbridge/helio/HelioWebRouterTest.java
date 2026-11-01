@@ -399,6 +399,26 @@ public class HelioWebRouterTest {
     }
 
     @Test
+    public void viewKeepsOnlyValidDetailsNames() throws Exception {
+        final org.json.JSONArray more = new org.json.JSONArray().put("cum").put("comp").put("Comp").put("x y")
+                .put("a".repeat(25)).put(3).put("../x");
+        router.handleBridgeMessage(viewMessage(new JSONObject().put("tab", "food").put("more", more)), APP_ORIGIN, true);
+        assertEquals("{\"tab\":\"food\",\"more\":[\"cum\",\"comp\"]}", router.savedView());
+        final org.json.JSONArray many = new org.json.JSONArray();
+        for (int i = 0; i < HelioWebRouter.MAX_VIEW_MORE + 10; i++) {
+            many.put("d" + i);
+        }
+        router.handleBridgeMessage(viewMessage(new JSONObject().put("more", many)), APP_ORIGIN, true);
+        assertEquals(HelioWebRouter.MAX_VIEW_MORE, new JSONObject(router.savedView()).getJSONArray("more").length());
+        // not a list, or nothing valid in it: no "more" field
+        router.handleBridgeMessage(viewMessage(new JSONObject().put("tab", "food").put("more", "cum")), APP_ORIGIN, true);
+        assertEquals("{\"tab\":\"food\"}", router.savedView());
+        router.handleBridgeMessage(viewMessage(new JSONObject().put("tab", "food").put("more", new org.json.JSONArray().put("A"))),
+                APP_ORIGIN, true);
+        assertEquals("{\"tab\":\"food\"}", router.savedView());
+    }
+
+    @Test
     public void viewFromOtherOriginsOrFramesIsIgnored() throws Exception {
         final String msg = viewMessage(new JSONObject().put("tab", "food"));
         assertNull(router.handleBridgeMessage(msg, Uri.parse("https://example.org"), true));

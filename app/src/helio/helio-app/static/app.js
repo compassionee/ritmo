@@ -55,8 +55,10 @@ function hourTicks(x0, x1, every) {
   return out;
 }
 // clock:end
-const fmtNum = (n) => (n == null ? "–" : Math.round(n).toLocaleString(I18N.locale()));
-const fmtDec = (n, digits = 1) => (n == null ? "–" : Number(n).toLocaleString(I18N.locale(), { maximumFractionDigits: digits, minimumFractionDigits: 0 }));
+// numbers through I18N.num: thousands always grouped ("2.374" also in Italian)
+const fmtNum = (n) => (n == null ? "–" : I18N.num(Math.round(n), 0));
+const fmtDec = (n, digits = 1) => (n == null ? "–" : I18N.num(n, digits));
+const fmtFixed = (n, digits = 2) => (n == null ? "–" : I18N.num(n, digits, true));
 const fmtDur = (min) => I18N.dur(min);
 const fmtShort = (s) => I18N.fmt(s, "dateshort");
 // the day's energy as the server gives it (day_energy): today "at least", the day is not over
@@ -109,6 +111,16 @@ function sourcesFold(box, list) {
 }
 
 /* ================= charts ================= */
+// a label on the axis that never leaves the chart: centred on x, or aligned to the edge it would cross. Charts are
+// often drawn while their tab is hidden (no measuring), so the width is estimated: 6 units per character of the 10 px
+// text, a little more than the real average
+function axisText(s, x, y, text, W, cls) {
+  const half = (String(text).length * 6) / 2;
+  const [ax, anchor] = x - half < 0 ? [0, "start"] : x + half > W ? [W, "end"] : [x, "middle"];
+  const n = el("text", { x: ax, y, "text-anchor": anchor, ...(cls ? { class: cls } : {}) }, s);
+  n.textContent = text;
+  return n;
+}
 function ring(target, value, goal, cls, width = 12) {
   target.replaceChildren();
   const r = 60 - width / 2 - 2, c = 2 * Math.PI * r;
@@ -139,7 +151,7 @@ function lineChart(box, pts, x0, x1, opts = {}) {
     const long = x1 - x0 > 6 * 3600;  // elapsed: charts longer than 6 hours get a tick every 6 hours
     for (const t of hourTicks(x0, x1, long ? 6 : 1)) {
       if (long && t >= x1) continue;
-      el("text", { x: x(t), y: H - 4, "text-anchor": t === x0 ? "start" : "middle" }, s).textContent = fmtTime(t).slice(0, 2);
+      axisText(s, x(t), H - 4, fmtTime(t).slice(0, 2), W);
     }
   }
   let d = "", area = "", seg = [];
@@ -171,11 +183,10 @@ function barChart(box, values, labels, opts = {}) {
     el("rect", { x: bx, y: T, width: bw, height: H - B - T, rx: Math.min(8, bw / 2), fill: "#1f232a" }, s);
     if (v > 0) el("rect", { x: bx, y: y(v), width: bw, height: Math.max(2, H - B - y(v)), rx: Math.min(8, bw / 2),
       class: i === opts.highlight ? opts.cls : `${opts.cls}-dim` }, s);
-    if (labels[i]) el("text", { x: bx + bw / 2, y: H - 5, "text-anchor": "middle" }, s).textContent = labels[i];
+    if (labels[i]) axisText(s, bx + bw / 2, H - 5, labels[i], W);
     if (opts.fmt && v > 0) {
       const inside = opts.inside && H - B - y(v) > 22;
-      el("text", { x: bx + bw / 2, y: inside ? y(v) + 14 : y(v) - 4, "text-anchor": "middle", class: inside ? "in-bar" : "" }, s)
-        .textContent = opts.fmt(v);
+      axisText(s, bx + bw / 2, inside ? y(v) + 14 : y(v) - 4, opts.fmt(v), W, inside ? "in-bar" : "");
     }
   });
   if (opts.goal) el("line", { x1: L, x2: W - R, y1: y(opts.goal), y2: y(opts.goal), class: "goal" }, s);
@@ -205,7 +216,7 @@ function bandChart(box, series, band, dec) {
     for (const v of [lo + pad, hi - pad]) el("text", { x: W - R + 4, y: y(v) + 3 }, s).textContent = fmtDec(v, dec);
   }
   series.forEach((p, i) => {
-    if (i % 7 === (n - 1) % 7) el("text", { x: x(i), y: H - 5, "text-anchor": "middle" }, s).textContent = fmtShort(p[0]);
+    if (i % 7 === (n - 1) % 7) axisText(s, x(i), H - 5, fmtShort(p[0]), W);
   });
   if (pts.length > 1) el("path", { d: "M" + pts.map((p) => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join("L"),
     fill: "none", class: "s-vit", "stroke-width": 2, "stroke-linejoin": "round" }, s);
@@ -254,6 +265,7 @@ function stageChart(box, sl) {
 
 /* ================= state and navigation ================= */
 let S = null, T = null, V = null, tab = "today", vitSel = "rhr";
+let SETTINGS = { lang: null, hints: [] };  // /api/settings: language and usage hints already used
 const TITLES = { today: "tab.today", fitness: "tab.fitness", sleep: "tab.sleep", food: "title.food", health: "tab.health", profile: "ui.app.profile_method" };
 
 function show(name) {
@@ -284,8 +296,8 @@ function renderToday(d) {
   const ex = $("planEx"); ex.replaceChildren();
   for (const [name, vol] of (d.plan && d.plan.exercises) || []) { const li = h("li", null, null, ex); h("span", null, name, li); if (vol) h("small", null, vol, li); }
   const adv = current === today() ? d.advice : null;
-  $("adviceBox").hidden = !adv;
-  if (adv) {
+  $("adviceBox").hidden = $("planMore").hidden = !adv;
+  if (adv) {  // in view the advice in one line; why and sources in Details
     $("adviceBox").className = `advice a-${adv.status}`;
     $("adviceTitle").textContent = tx(adv.title);
     $("adviceText").textContent = tx(adv.text);
@@ -309,16 +321,24 @@ function renderToday(d) {
   $("sleepTileLbl").textContent = sl && sl.score ? t("today.sleep_score", { score: sl.score }) : t("tab.sleep");
   $("sleepFill").style.width = sl ? `${Math.min(100, (100 * sl.total) / d.goals.sleep)}%` : "0%";
 
-  const list = $("insights"); list.replaceChildren();
+  // one row per comment (section · title · value), tapping goes to the section; the paragraphs are in Details
+  const list = $("insights"), more = $("insightsText"); list.replaceChildren(); more.replaceChildren();
   for (const it of d.insights) {
-    const c = h("div", "card insight", null, list);
-    h("span", `tag t-${it.tone}`, t(`tag.${it.tag}`), c);
-    h("h3", null, tx(it.title), c);
-    h("p", null, tx(it.text), c);
     const go = TAG_TAB[it.tag];
-    if (go) { const btn = h("button", "go", t(TAG_GO[go]), c); btn.addEventListener("click", () => show(go)); }
+    const r = h(go ? "button" : "div", `ins-row tone-${it.tone}`, null, list);
+    h("i", "ins-dot", null, r);
+    h("span", "ins-tag", t(`tag.${it.tag}`), r);
+    h("span", "ins-title", tx(it.title), r);
+    if (it.value) h("b", "ins-val", tx(it.value), r);
+    if (go) {
+      h("span", "ins-go", "›", r).setAttribute("aria-hidden", "true");
+      r.setAttribute("aria-label", `${t(`tag.${it.tag}`)} · ${tx(it.title)}${it.value ? ` · ${tx(it.value)}` : ""} · ${t(TAG_GO[go])}`);
+      r.addEventListener("click", () => show(go));
+    }
+    h("p", "note", t("today.insights_more", { tag: t(`tag.${it.tag}`), title: tx(it.title), text: tx(it.text) }), more);
   }
-  if (!d.insights.length) empty(h("div", "card", null, list), t("today.no_insights"));
+  $("insightsMore").hidden = !d.insights.length;
+  if (!d.insights.length) h("p", "judge", t("today.no_insights"), list);
 
   const k = d.kcal, tot = Math.max(1, k.total);
   $("kcalTotal").textContent = kcalText(k.total, k.partial);
@@ -340,6 +360,8 @@ function renderToday(d) {
   lineChart($("hrSpark"), hr.series, d.day_start, d.day_end, { h: 70, compact: true, emptyText: t("today.wear_band_hr") });
 
   $("stressValue").textContent = d.stress ? d.stress.avg : "–";
+  $("todayStressNote").textContent = tx(d.proprietary.stress.text);
+  sourcesFold($("todayStressSrc"), d.proprietary.stress.sources);
   $("stressSub").textContent = d.stress ? t("today.stress_sub", { level: stressLabel(d.stress.avg), last: d.stress.last }) : t("common.no_data_lc");
   $("spo2Value").textContent = d.spo2 ? `${d.spo2.avg}%` : "–";
   $("spo2Sub").textContent = d.spo2 ? spo2Text(d.spo2.min, d.spo2.max, d.spo2.isolated_dips) : t("common.not_active");
@@ -421,12 +443,15 @@ function renderFitness(d, td) {
     } else {
       const box = h("span", "w-sug-text", null, sug);
       h("b", null, t("fit.looks_like", { name: w.suggestion.name }), box);
-      h("small", null, `${t(CONF[w.suggestion.confidence] || "conf.low")} · ${tx(w.suggestion.reason)}`, box);
       const btns = h("span", "w-btns", null, sug);
       const ok = h("button", "w-btn", t("fit.confirm"), btns);
       ok.addEventListener("click", () => saveLabel(w, w.suggestion.type, w.suggestion.day, w.suggestion.load_kg || 0, ok));
       const ch = h("button", "w-btn ghost", t("fit.change"), btns);
       ch.addEventListener("click", () => openSheet(w, d));
+      // how sure and why (cadence, heart rate...): in the card's Details
+      const more = h("details", "more", null, c); more.dataset.more = `fit_w_${w.start}`;
+      h("summary", null, t("more.title"), more);
+      h("p", "note w-why", `${t(CONF[w.suggestion.confidence] || "conf.low")} · ${tx(w.suggestion.reason)}`, more);
     }
 
     const det = h("div", "w-detail", null, c); det.hidden = true;
@@ -489,7 +514,7 @@ function renderFitness(d, td) {
   barChart($("weekSteps"), steps, td.days.map((x) => wdLetter(x.date)), { cls: "bar-steps", goal: td.goals.steps, highlight: 6, fmt: kfmt, inside: true, h: 160, emptyText: t("fit.no_steps_7d") });
   const withData = steps.filter((s) => s > 0);
   $("weekStepsSub").textContent = withData.length
-    ? t("fit.steps_week", { avg: withData.reduce((a, b) => a + b, 0) / withData.length, n: steps.filter((s) => s >= td.goals.steps).length }) : "";
+    ? t("fit.steps_week", { avg: { $: "fit.steps_n", n: Math.round(withData.reduce((a, b) => a + b, 0) / withData.length) }, n: steps.filter((s) => s >= td.goals.steps).length }) : "";
 }
 
 const saveTimeoutMs = () => window.HELIO_SAVE_TIMEOUT_MS || 20000;  // tests shorten it
@@ -664,8 +689,10 @@ function renderSleep(d, td) {
   const sl = d.sleep;
   $("sleepScore").hidden = !(sl && sl.score);
   $("sleepScore").textContent = sl && sl.score ? t("sleep.zepp_score", { score: sl.score }) : "";
+  // the score is the manufacturer's: a pill in view, the note and its source in Details
   $("sleepScoreNote").hidden = !(sl && sl.score);
   $("sleepScoreNote").textContent = t("sleep.score_note", { text: d.proprietary.sleep_score.text });
+  sourcesFold($("sleepScoreSrc"), sl && sl.score ? d.proprietary.sleep_score.sources : []);
   const si = d.sleep_insight;
   $("sleepTitle").textContent = si ? tx(si.title) : t("sleep.none_title");
   $("sleepText").textContent = si ? tx(si.text) : t("sleep.none_text");
@@ -679,12 +706,15 @@ function renderSleep(d, td) {
   const hl = d.sleep_highlights || [], box = $("sleepHighlights"); box.replaceChildren();
   const ok = hl.filter((x) => x.ok).length;
   $("hlTitle").textContent = hl.length ? t("sleep.hl_title", { ok, n: hl.length }) : t("ui.sleep.key_points");
+  // each row: name, value and status; the row opens its reference and sources ("Details" of the row)
   for (const x of hl) {
-    const r = h("div", `hl${x.ok ? "" : " bad"}`, null, box);
-    const top = h("div", "row", null, r);
+    const r = h("details", `more hl-row${x.ok ? "" : " bad"}`, null, box);
+    r.dataset.more = `sleep_hl_${x.key}`;
+    const top = h("summary", null, null, r);
     h("b", null, tx(x.title), top);
+    h("span", "hl-val", tx(x.display), top);
     h("span", `pill ${x.ok ? "good" : x.level === 2 ? "info" : "warn"}`, tx(x.label), top);
-    h("div", "hl-val", t("sleep.hl_value", { value: x.display, ref: x.ref }), r);
+    h("p", "note", t("sleep.hl_ref", { ref: x.ref }), r);
     sources(h("div", "hl-src", null, r), x.sources);
   }
   if (!hl.length) empty(box, t("common.no_data"));
@@ -698,7 +728,7 @@ function renderSleep(d, td) {
   $("respValue").textContent = sl && sl.resp != null ? fmtDec(sl.resp) : "–";
   $("sleepSpo2").textContent = sl && sl.spo2 != null ? `${sl.spo2}%` : "–";
   $("sleepSpo2Sub").textContent = sl && sl.spo2_min != null ? spo2Text(sl.spo2_min, null, sl.spo2_dips) : t("common.not_active");
-  $("sleepTemp").textContent = sl && sl.temp != null ? `${fmtDec(sl.temp)}°` : "–";
+  $("sleepTemp").textContent = sl && sl.temp != null ? `${fmtDec(sl.temp)}\u00a0°C` : "–";  // unit after a no-break space
 
   renderSri(d.sri);
   barChart($("sleepWeek"), td.days.map((x) => x.sleep || 0), td.days.map((x) => wdLetter(x.date)),
@@ -756,29 +786,22 @@ function renderHealth(d, td, vits) {
   $("readyScore").textContent = r ? r.score : "–";
   $("readyLabel").textContent = r ? tx(r.label) : t("health.ready_wait");
   const parts = $("readyParts"); parts.replaceChildren();
-  if (r) r.parts.forEach((p) => h("li", null, tx(p), parts));
+  if (r) r.parts.forEach((p) => h("span", "reason", tx(p), parts));  // the reasons as chips
 
   const hr = td.health, sum = $("healthSummary"); sum.replaceChildren();
   const ready = hr.items.filter((i) => i.status === "ok");
-  if (!ready.length) h("p", "muted", t("health.collecting"), sum);
-  else {
+  // nothing rated yet: no summary card, its sentence becomes the subtitle of the "Collecting" card
+  $("healthSummaryCard").hidden = !ready.length;
+  if (ready.length) {
     if (hr.strengths.length) { const row = h("div", "hs-row", null, sum); h("b", null, t("health.strengths"), row); row.append(I18N.list(hr.strengths)); }
     if (hr.improve.length) { const row = h("div", "hs-row", null, sum); h("b", null, t("health.improve"), row); row.append(I18N.list(hr.improve)); }
     const mid = ready.filter((i) => i.level === 2).map((i) => i.title);
     if (mid.length) { const row = h("div", "hs-row", null, sum); h("b", null, t("health.average"), row); row.append(I18N.list(mid)); }
   }
+  // items with data: a full card with the band bar; items still collecting: compact rows ("1/3") in one card,
+  // each row opening its period, bands, explanation and sources
   const list = $("healthItems"); list.replaceChildren();
-  for (const it of hr.items) {
-    const c = h("div", "card hcard", null, list);
-    const head = h("div", "h-head", null, c);
-    h("h4", null, tx(it.title), head);
-    h("span", "h-period", tx(it.period), head);
-    const val = h("div", "h-value", null, c);
-    if (it.status === "ok") {
-      h("b", null, it.display ? tx(it.display) : fmtDec(it.value, 2), val);
-      h("span", "unitlbl", it.display ? "" : tx(it.unit), val);
-      h("span", `pill lv${it.level}`, tx(it.label), val);
-    } else h("span", "pill wait", tx(it.label), val);
+  const bands = (c, it) => {
     const [lo, hi] = it.scale;
     const bar = h("div", "bandbar", null, c);
     const labels = h("div", "bandlabels", null, c);
@@ -792,8 +815,45 @@ function renderHealth(d, td, vits) {
       if (a > lo) { const l = h("span", null, it.key === "sleep" ? t("unit.hours_short", { v: a }) : fmtNum(a), labels); l.style.left = `${pos(a)}%`; }
     }
     if (it.status === "ok") { const m = h("div", "marker", null, bar); m.style.left = `${pos(it.value)}%`; }
-    h("p", "h-text", tx(it.text), c);
-    sources(h("div", "h-src", null, c), it.sources);
+  };
+  const explain = (more, it) => {
+    h("p", "note h-text", tx(it.text), more);
+    sourcesFold(h("div", null, null, more), it.sources);
+  };
+  for (const it of hr.items.filter((x) => x.status === "ok")) {
+    const c = h("div", "card hcard", null, list);
+    const head = h("div", "h-head", null, c);
+    h("h4", null, tx(it.title), head);
+    h("span", "h-period", tx(it.period), head);
+    const val = h("div", "h-value", null, c);
+    h("b", null, it.display ? tx(it.display) : fmtDec(it.value, 2), val);
+    h("span", "unitlbl", it.display ? "" : tx(it.unit), val);
+    h("span", `pill lv${it.level}`, tx(it.label), val);
+    bands(c, it);
+    const more = h("details", "more", null, c); more.dataset.more = `health_${it.key}`;
+    h("summary", null, t("more.title"), more);
+    explain(more, it);
+  }
+  const waiting = hr.items.filter((x) => x.status !== "ok");
+  if (waiting.length) {
+    const c = h("div", "card hcard waiting", null, list);
+    h("h4", null, t("health.waiting_title"), c);
+    if (!ready.length) h("p", "muted h-sub", t("health.collecting"), c);
+    for (const it of waiting) {
+      const row = h("details", "more hl-row h-wait", null, c); row.dataset.more = `health_${it.key}`;
+      const sm = h("summary", null, null, row);
+      h("b", null, tx(it.title), sm);
+      const pill = h("span", "pill wait", t("health.n_of", { n: it.days, need: it.need }), sm);
+      pill.title = tx(it.label);
+      h("p", "note", `${tx(it.label)} · ${tx(it.period)}`, row);
+      bands(row, it);
+      explain(row, it);
+    }
+    if (!ready.length) {  // the note on the ratings, which was in the summary card's Details
+      const more = h("details", "more", null, c); more.dataset.more = "health_summary";
+      h("summary", null, t("more.title"), more);
+      h("p", "note", t("ui.health.ratings_compare_values_thresholds"), more);
+    }
   }
 
   const st = d.stress;
@@ -821,18 +881,21 @@ function renderProfile(d) {
     hrmax: p.hrmax, how: hrmaxText(p), bmr: p.bmr, steps: d.goals.steps, active: d.goals.active, sleep: d.goals.sleep, zone: d.goals.zone_week });
   const manual = Object.entries(p.src || {}).filter(([, v]) => v === "app").map(([k]) => PROF_NAMES[k]).filter(Boolean).map((k) => t(k));
   if (manual.length) $("profileText").textContent += " " + t("prof.manual", { fields: manual });
+  $("profileShort").textContent = t("prof.short", { age: p.age, sex: sexL, weight: p.weight, height: p.height, hrmax: p.hrmax, bmr: p.bmr });
   sourcesFold($("kcalSrc"), d.kcal_sources);
   renderSources(d.sources_index);
   exportLinks();
   renderLangChoice();
   const q = d.quality;
   $("qualityDay").textContent = dayLabel(current);
-  $("qualitySummary").textContent = t("quality.summary", { hr: q.hr_fixes.length, hr_n: q.hr_samples, motion: q.spo2_motion, dips: q.spo2_dips, spo2_n: q.spo2_samples });
+  $("qualitySummary").textContent = t("quality.summary", { hr: { $: "quality.hr", n: q.hr_fixes.length, total: q.hr_samples },
+    motion: { $: "quality.motion", n: q.spo2_motion }, dips: { $: "spo2.dips", n: q.spo2_dips }, spo2_n: q.spo2_samples });
   const box = $("qualityRules"); box.replaceChildren();
+  // each rule is a row opening its explanation and sources
   for (const r of q.rules) {
-    const c = h("div", "rule", null, box);
-    h("h4", null, tx(r.title), c);
-    h("p", null, tx(r.text), c);
+    const c = h("details", "more hl-row rule", null, box); c.dataset.more = `prof_rule_${r.id || box.children.length}`;
+    h("b", null, tx(r.title), h("summary", null, null, c));
+    h("p", "note", tx(r.text), c);
     sources(h("div", "h-src", null, c), r.sources);
   }
 }
@@ -855,6 +918,8 @@ const PROF_FIELDS = [
   ["profZone", "zone_goal_week", Number, String, (b, e) => String(e.zone_goal_week)],
   ["profAltitude", "altitude_goal_m", Number, String, () => t("prof.hint_none")],
   ["profAltitudeName", "altitude_goal_name", (v) => v, (v) => v, () => t("prof.hint_altitude_name")],
+  ["profBf", "bf_pct", Number, String, () => ""],
+  ["profBfDate", "bf_date", (v) => v, (v) => v, () => ""],
 ];
 
 async function openProfile() {
@@ -866,6 +931,8 @@ async function openProfile() {
     $(id).placeholder = hint(base, eff);
   }
   $("profSex").value = saved.sex || "";
+  $("profBfMethod").value = saved.bf_method || "";
+  $("profBfDate").max = today();
   const work = $("profWork"); work.replaceChildren();
   for (const lv of pr.work_levels || []) {
     const o = h("option", null, `${t(`work.${lv.key}`)} · ${t("work.src", { code: lv.code, met: lv.met })}`, work);
@@ -883,11 +950,12 @@ function readProfile() {
   const out = {};
   for (const [id, key, fromField] of PROF_FIELDS) {
     const raw = String($(id).value).trim();
-    const num = id === "profAltitudeName" || id === "profBirth" ? raw : raw.replace(",", ".");
+    const num = ["profAltitudeName", "profBirth", "profBfDate"].includes(id) ? raw : raw.replace(",", ".");
     out[key] = num === "" ? null : fromField(num);
   }
   out.sex = $("profSex").value || null;
   out.work_level = $("profWork").value || null;
+  out.bf_method = $("profBfMethod").value || null;
   return out;
 }
 function hrmaxText(p) {
@@ -907,7 +975,8 @@ function renderSources(idx) {
     link(r, s);
     h("small", null, t("src.row", { kind: t(`src.kind.${s.kind}`), coi: t(`src.coi.${s.coi}`), note: tx(s.note), why: s.why ? tx(s.why) : "" }).trim(), r);
   }
-  $("sourcesSummary").textContent = t("src.show_all", { n: idx.sources.length, coi: idx.sources.filter((s) => s.coi === "present").length });
+  $("sourcesSummary").textContent = t("src.show_all", { n: idx.sources.length, coi: { $: "src.flagged", n: idx.sources.filter((s) => s.coi === "present").length } });
+  $("removedSummary").textContent = t("src.removed_n", { n: idx.removed.length });
   const rm = $("removedList"); rm.replaceChildren();
   for (const x of idx.removed) {
     // original source title (if any) and description in the chosen language
@@ -948,7 +1017,7 @@ function renderWeek(w) {
   const prevMode = w.which === "previous";
   $("weekCur").classList.toggle("on", !prevMode); $("weekPrev").classList.toggle("on", prevMode);
   const title = t(prevMode ? "wk.previous" : "wk.current", { from: w.start, to: w.end });
-  $("weekTitle").textContent = c.plan_total ? t("wk.title_plan", { title, done: c.plan_done, total: c.plan_total }) : title;
+  $("weekTitle").textContent = c.plan_total ? t("wk.title_plan", { title, done: c.plan_done, n: c.plan_total }) : title;
   const days = $("weekDays"); days.replaceChildren();
   for (const x of c.days) {
     const b = h("div", `wd st-${x.status}`, null, days);
@@ -957,10 +1026,12 @@ function renderWeek(w) {
     const plan = x.plan || t("wk.no_plan");
     b.title = x.done.length ? t("wk.day_done", { plan, done: x.done.map((w2) => tx(w2.name)) }) : plan;
   }
-  const st = $("weekStats"); st.replaceChildren();
+  const st = $("weekStats"), wm = $("weekMore"); st.replaceChildren(); wm.replaceChildren();
   // comparison with the previous week: green if it goes the useful way (better = 1 more is better, -1 less is better, 0 neutral)
+  // in view the four main rows, the others in Details
+  const MAIN = new Set(["wk.zone", "wk.strength", "wk.steps", "wk.sleep"]);
   const row = (key, value, k, unit = "", dec = 0, better = 1) => {
-    const r = h("div", "ws-row", null, st); h("span", null, t(key), r);
+    const r = h("div", "ws-row", null, MAIN.has(key) ? st : wm); h("span", null, t(key), r);
     const v = h("b", null, value, r);
     if (k && df[k] != null && df[k] !== 0) {
       const cls = better === 0 ? "flat" : df[k] * better > 0 ? "up" : "down";
@@ -991,10 +1062,14 @@ function renderSri(r) {
 
 /* ================= strength log ================= */
 let STR = null, strDay = null;
+// counted nouns with their plural ("1 set", "3 sets")
+const strSets = (n) => ({ $: "str.n_sets", n });
+const repSets = (s) => t("str.rep_sets", { sets: strSets(s.sets), reps: { $: "str.n_reps", n: s.reps } });
+
 function renderStrength(st) {
   STRW = st;
-  $("strengthWeek").textContent = st ? (st.week.volume ? t("str.week_volume", { n: st.week.days, sets: st.week.sets, kg: st.week.volume })
-    : t("str.week", { n: st.week.days, sets: st.week.sets })) : "";
+  $("strengthWeek").textContent = st ? (st.week.volume ? t("str.week_volume", { n: st.week.days, sets: strSets(st.week.sets), kg: st.week.volume })
+    : t("str.week", { n: st.week.days, sets: strSets(st.week.sets) })) : "";
   const box = $("strengthList"); box.replaceChildren();
   if (!st || !st.progress.length) { empty(box, t("str.none")); }
   else for (const ex of st.progress) {
@@ -1003,10 +1078,10 @@ function renderStrength(st) {
     const last = ex.sessions[ex.sessions.length - 1];
     let txt;
     const loadTxt = last.best_kg ? ` ${t("str.with_kg", { kg: last.best_kg })}` : "";
-    if (ex.kind === "time") txt = t("str.time_sets", { sets: last.sets, sec: last.sec }) + loadTxt;
-    else if (ex.kind === "system" && last.e1rm) txt = t("str.rep_sets", { sets: last.sets, reps: last.reps }) + loadTxt + " · "
+    if (ex.kind === "time") txt = t("str.time_sets", { sets: strSets(last.sets), sec: last.sec }) + loadTxt;
+    else if (ex.kind === "system" && last.e1rm) txt = repSets(last) + loadTxt + " · "
       + t(last.e1rm_added >= 0 ? "str.e1rm_plus" : "str.e1rm_minus", { kg: Math.abs(last.e1rm_added) });
-    else txt = t("str.rep_sets", { sets: last.sets, reps: last.reps }) + (last.volume ? ` · ${t("str.lifted", { kg: last.volume })}` : "");
+    else txt = repSets(last) + (last.volume ? ` · ${t("str.lifted", { kg: last.volume })}` : "");
     h("small", null, `${fmtShort(last.date)}: ${txt}`, r);
     const metric = ex.kind === "time" ? (ex.sessions.some((x) => x.hold) ? "hold" : "sec") : ex.kind === "system" ? "e1rm" : (ex.sessions.some((x) => x.volume) ? "volume" : "reps");
     const vals = ex.sessions.map((x) => x[metric] || 0);
@@ -1233,10 +1308,14 @@ function renderFood(n, F) {
   $("nutCompleteNote").textContent = n.complete
     ? t(ex && !ex.partial && !ex.valid ? "nut.complete_note_nobalance" : "nut.complete_note")
     : t("nut.incomplete_note");
+  // usage hint: shown until the button is used once, then behind the (i) icon
+  const seen = SETTINGS.hints.includes("day_complete");
+  $("nutCompleteInfo").hidden = !seen;
+  $("nutCompleteNote").hidden = seen && $("nutCompleteInfo").getAttribute("aria-expanded") !== "true";
 
   renderMeals(n);
   $("nutDaySub").textContent = n.complete ? t("nut.day_complete_lc") : n.n ? t("nut.in_progress") : "";
-  renderNutChecks($("nutDayChecks"), n.day_checks, t("nut.checks_empty"));
+  renderNutChecks($("nutDayChecks"), n.day_checks, t("nut.checks_empty"), "nut_day");
 
   // last 7 days
   const wk = n.week;
@@ -1249,7 +1328,7 @@ function renderFood(n, F) {
   for (const [cls, name] of [["food", "nut.legend_intake"], ["exp", "nut.legend_exp"]]) {
     const l = h("span", null, null, wl); h("i", `sw ${cls}`, null, l); l.append(t(name));
   }
-  renderNutChecks($("nutWeekChecks"), wk.checks, "");
+  renderNutChecks($("nutWeekChecks"), wk.checks, "", "nut_week");
   if (wk.days >= wk.need && !wk.energy) {
     h("p", "note", t("nut.energy_need", { need: wk.need, have: wk.energy_days }), $("nutWeekChecks"));
   }
@@ -1266,6 +1345,10 @@ function renderFood(n, F) {
 
   // check against weight (Hall 2008)
   const wc = n.weight_check;
+  // in view one line: what is missing, or the trend against what the balance allows; the full text in Details
+  $("nutWeightShort").textContent = wc.status === "collecting"
+    ? t("wc.short_need", { w: wc.weighins, need_w: wc.need.weighins, d: wc.days, need_d: wc.need.days })
+    : t("wc.short", { v: wc.trend_week, lo: wc.expected_week[0], hi: wc.expected_week[1] });
   $("nutWeightText").textContent = tx(wc.text);
   $("nutWeightPill").hidden = wc.status === "collecting";
   $("nutWeightPill").className = `pill ${wc.status === "ok" ? "good" : "warn"}`;
@@ -1284,25 +1367,185 @@ function renderFood(n, F) {
   sourcesFold($("nutMethodSrc"), n.method.sources);
 }
 
-function renderNutChecks(box, list, emptyText) {
+/* cumulative balance and composition estimate (/api/balance for the period chosen) */
+// period and start date are saved in the data (nutrition.json): before the first answer the server's choice is used
+let CUM = null, cumPeriod = null, cumSeq = 0;
+const cumUrl = () => `/api/balance?date=${current}${cumPeriod ? `&period=${cumPeriod}` : ""}`;
+const kgSigned = (v) => (v > 0 ? `+${fmtFixed(v)}` : v < 0 ? `−${fmtFixed(-v)}` : fmtFixed(0));  // kg: always 2 decimals
+const CUM_PILL = { deficit: "good", surplus: "warn", even: "info" };
+const ENERGY_PILL = { coherent: "good", faster: "warn", slower: "warn", collecting: "info" };
+
+async function loadCum() {
+  const seq = ++cumSeq;
+  let res = null;
+  try { res = await getJson(cumUrl()); } catch (e) { res = null; }
+  if (seq !== cumSeq) return;
+  CUM = res;
+  renderCum(NUT && FOODS ? CUM : null);
+}
+
+// in view: total with the sign, margin, "days included · average", chart, fat at most; the rest in Details
+function renderCum(c) {
+  $("cumCard").hidden = $("compCard").hidden = !c;
+  if (!c) return;
+  cumPeriod = c.period;
+  document.querySelectorAll("#cumSwitch button").forEach((b) => b.classList.toggle("on", b.dataset.p === c.period));
+  $("cumSinceRow").hidden = c.period !== "since";
+  $("cumSince").max = today();
+  if (c.period === "since" && document.activeElement !== $("cumSince")) $("cumSince").value = c.since || "";
+  $("cumPeriod").textContent = c.start ? t("cum.period", { from: c.start, to: c.end }) : "";
+  const ok = c.status === "ok";
+  $("cumBody").hidden = !ok;
+  $("cumEmpty").hidden = ok;
+  $("cumEmpty").textContent = ok ? "" : t({ need_date: "cum.need_date", empty: "cum.empty" }[c.status] || "cum.none");
+  $("cumPartial").hidden = !(ok && c.partial);
+  $("cumFatNote").hidden = !(ok && c.fat_max);
+  $("cumChoice").textContent = t("cum.choice", { pct: 100 * c.coverage_min });
+  if (ok) {
+    $("cumTotal").textContent = signed(c.total);
+    $("cumSign").className = `pill ${c.sign_sure ? CUM_PILL[c.sign] : "info"}`;
+    $("cumSign").textContent = t(`cum.${c.sign}`);
+    $("cumUnsure").hidden = c.sign_sure || c.sign === "even";
+    $("cumPartialPill").hidden = !c.partial;
+    $("cumRange").textContent = t("cum.range", { lo: signed(c.range[0]), hi: signed(c.range[1]) });
+    $("cumDays").textContent = t("cum.days", { n: c.included, days: c.days, mean: signed(c.mean) });
+    $("cumPartial").textContent = c.partial ? t("cum.partial", { pct: 100 * c.coverage, min: 100 * c.coverage_min }) : "";
+    cumChart($("cumChart"), c.series);
+    const lg = $("cumLegend"); lg.replaceChildren();
+    for (const [cls, name] of [["cum", "cum.legend_cum"], ["cum-band", "cum.legend_band"], ["cum-out", "cum.legend_out"]]) {
+      const l = h("span", null, null, lg); h("i", `sw ${cls}`, null, l); l.append(t(name));
+    }
+    const f = c.fat_max;
+    $("cumFat").hidden = !f;
+    if (f) $("cumFat").textContent = t("cum.fat_line", { label: t(f.dir === "lost" ? "cum.fat_lost" : "cum.fat_gained"), kg: fmtFixed(f.kg), hi: fmtFixed(f.range[1]) });
+  }
+  $("cumExcluded").textContent = ok ? [c.excluded.diary || c.excluded.band ? t("cum.excluded", c.excluded) : "",
+    c.today_in_period ? t("cum.today") : "", c.clipped ? t("cum.clipped", { n: c.days }) : ""].filter(Boolean).join(" ") : "";
+  $("cumExcluded").hidden = !$("cumExcluded").textContent;
+  sourcesFold($("cumSrc"), c.sources);
+  renderComp(c.composition);
+}
+
+// cumulative balance day by day: line with the lo/hi band, zero line, days left out marked under the axis
+function cumChart(box, series) {
+  if (!series || !series.length) return empty(box, t("common.no_data"));
+  const W = 340, H = 150, L = 40, R = 6, T = 10, B = 20, n = series.length;
+  const s = svg(W, H);
+  const vals = series.flatMap((p) => [p[2], p[3]]).concat([0]);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < 100) { hi += 50; lo -= 50; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : (i / (n - 1)) * (W - L - R));
+  const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  for (const v of [lo + pad, 0, hi - pad]) {
+    if (v !== 0 && Math.abs(y(v) - y(0)) < 12) continue;  // too close to the zero line to read
+    el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), class: v === 0 ? "cum-zero" : "grid" }, s);
+    el("text", { x: L - 4, y: y(v) + 3, "text-anchor": "end" }, s).textContent = v === 0 ? "0" : `${v < 0 ? "−" : "+"}${kfmt(Math.abs(v))}`;
+  }
+  const upper = series.map((p, i) => `${x(i).toFixed(1)},${y(p[3]).toFixed(1)}`);
+  const lower = series.map((p, i) => `${x(i).toFixed(1)},${y(p[2]).toFixed(1)}`).reverse();
+  el("path", { d: `M${upper.concat(lower).join("L")}Z`, class: "cum-band" }, s);
+  el("path", { d: "M" + series.map((p, i) => `${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join("L"),
+    fill: "none", class: "cum-line", "stroke-width": 2, "stroke-linejoin": "round" }, s);
+  series.forEach((p, i) => { if (!p[4]) el("circle", { cx: x(i), cy: H - B + 3, r: 2, class: "cum-out" }, s); });
+  const step = Math.max(1, Math.ceil(n / 5));
+  series.forEach((p, i) => {
+    if ((n - 1 - i) % step === 0) axisText(s, x(i), H - 4, fmtShort(p[0]), W);
+  });
+  box.replaceChildren(s);
+}
+
+// a status chip: label, ✓ or ⚠ (with a spoken name)
+function statusChip(box, text, good) {
+  const c = h("span", `chip-st ${good == null ? "" : good ? "ok" : "warn"}`, null, box);
+  h("span", null, text, c);
+  if (good != null) {
+    const st = h("span", "st", good ? "✓" : "⚠", c);
+    st.setAttribute("role", "img"); st.setAttribute("aria-label", t(good ? "comp.ok" : "comp.warn"));
+  }
+}
+
+// short line in view when the estimate is not available; the full text goes in Details
+function compShort(c) {
+  if (c.status === "need_measure") return t("comp.short.measure");
+  if (c.period_days <= c.need.span) return t("comp.short.period", { span: c.need.span });
+  if (c.weighins < c.need.weighins || c.span < c.need.span) {
+    return t("comp.short.need", { weighins: c.need.weighins, span: c.need.span, now_w: c.weighins, now_span: c.span });
+  }
+  return t("comp.short.profile", { fields: c.profile_missing.map((k) => t(`prof.f.${k}`)) });
+}
+
+// in view: the three boxes, lean share, energy check pill, protein/strength/deficit chips and the judgement
+function renderComp(c) {
+  const ok = !!c && c.status === "ok";
+  $("compBody").hidden = $("compDetails").hidden = !ok;
+  $("compEmpty").hidden = ok;
+  $("compEmpty").textContent = !c ? t("cum.need_date") : ok ? "" : compShort(c);
+  $("compNeed").hidden = ok || !c;
+  $("compNeed").textContent = c && !ok ? tx(c.text) : "";
+  // the card's sources: the model's and those of the protein and strength signals
+  const all = ok ? c.sources.concat(c.signals.sources) : c ? c.sources : [];
+  sourcesFold($("compSrc"), all.filter((s, i) => all.findIndex((x) => x.key === s.key) === i));
+  if (!ok) return;
+  const range = (r) => t("comp.kg_range", { lo: kgSigned(r[0]), hi: kgSigned(r[1]) });
+  for (const [id, k] of [["compWeight", "weight"], ["compFat", "fat"], ["compLean", "lean"]]) {
+    $(id).textContent = t("comp.kg", { v: kgSigned(c[k]) });
+    $(`${id}Range`).textContent = range(c[`${k}_range`]);
+  }
+  $("compShare").textContent = t("comp.share", { v: c.lean_share, lo: c.lean_share_range[0], hi: c.lean_share_range[1] });
+  const e = c.energy;
+  $("compEnergyPill").className = `pill ${ENERGY_PILL[e.status] || "info"}`;
+  $("compEnergyPill").textContent = t(e.status === "collecting" ? "comp.collecting" : `comp.energy.${e.status}`);
+  const sg = c.signals, chips = $("compChips"); chips.replaceChildren();
+  statusChip(chips, sg.protein_gkg == null ? t("comp.chip.protein_none") : t("comp.chip.protein", { v: sg.protein_gkg }), sg.protein_ok);
+  statusChip(chips, t("comp.chip.strength", { v: sg.strength_week }), sg.strength_ok);
+  if (sg.deficit != null) statusChip(chips, t(sg.deficit >= 0 ? "comp.chip.deficit" : "comp.chip.surplus", { v: Math.abs(sg.deficit) }), sg.deficit_ok);
+  $("compJudge").textContent = tx(sg.judgement);
+  // Details
+  $("compTrend").textContent = [t("comp.trend", { n: c.weighins, from: c.from, to: c.to, span: c.span, v: kgSigned(c.weight),
+    lo: kgSigned(c.weight_range[0]), hi: kgSigned(c.weight_range[1]) }), c.stable ? t("comp.stable") : ""].filter(Boolean).join(" ");
+  // initial fat with one decimal (its error is a few kg); the changes keep two
+  const fs = c.fm_src, fm = { fm: fmtFixed(c.fm0, 1), lo: fmtFixed(c.fm0_range[0], 1), hi: fmtFixed(c.fm0_range[1], 1), pct: fs.pct, sd: fs.sd };
+  const months = Math.round(c.old_days / 30);
+  $("compFm").textContent = fs.kind === "measured"
+    ? [t("comp.fm_measured", { ...fm, method: t(`comp.method.${fs.method}`), date: fs.date }), fs.old ? t("comp.fm_old", { months }) : ""].filter(Boolean).join(" ")
+    : t("comp.fm_gallagher", { ...fm, bmi: fs.bmi });
+  $("compEnergy").textContent = tx(e.text);
+  const ul = $("compSignals"); ul.replaceChildren();
+  h("li", null, sg.protein_gkg == null ? t("comp.sig.protein_none")
+    : t("comp.sig.protein", { v: sg.protein_gkg, ref: sg.protein_ref, efsa: sg.protein_efsa }), ul);
+  h("li", null, t("comp.sig.strength", { v: sg.strength_week, ref: sg.strength_ref }), ul);
+  if (sg.deficit != null) h("li", null, t("comp.sig.deficit", { v: signed(-sg.deficit), max: sg.deficit_max }), ul);
+  $("compSignalsText").textContent = tx(sg.text);
+  $("compChoice").textContent = t("comp.choice", { months, pct: 100 * c.coverage_min });
+}
+
+// one row per check: name, value and status; the row opens the reference, the explanation and the sources.
+// A day in progress keeps its progress bar in view.
+function renderNutChecks(box, list, emptyText, prefix) {
   box.replaceChildren();
   if (!list || !list.length) { if (emptyText) empty(box, emptyText); return; }
   for (const c of list) {
     const r = h("div", `chk st-${c.status}`, null, box);
-    const head = h("div", "row", null, r); h("b", null, tx(c.title), head);
+    const det = h("details", "more chk-row", null, r); det.dataset.more = `${prefix}_${c.key}`;
+    const head = h("summary", null, null, det);
+    h("b", null, tx(c.title), head);
+    h("span", "chk-val", tx(c.display), head);
     const running = c.status === "in_progress";
-    if (!running) h("span", `pill ${NUT_PILL[c.status] || "info"}`, c.status === "certain" || c.status === "probable" ? t("nut.label_status", { label: c.label, status: t(`nut.st.${c.status}`) }) : tx(c.label), head);
-    h("div", "chk-val", tx(c.display), r);
-    // day in progress: no judgement, only what is missing (minimums) or how much of the limit is used (maximums)
+    // "· likely" only when the judgement is not certain
+    if (!running) h("span", `pill ${NUT_PILL[c.status] || "info"}`, c.status === "probable" ? t("nut.label_status", { label: c.label, status: t("nut.st.probable") }) : tx(c.label), head);
+    // day in progress: no judgement, only what is missing (minimums) or how much of the limit is used (maximums), in one
+    // short line; the full reference (EFSA, WHO) is in the row's Details
     if (running && c.goal && c.value != null && c.dir) {
       const bar = h("div", `bar chk-bar ${c.dir}`, null, r), fill = h("i", null, null, bar);
       fill.style.width = `${Math.min(100, (100 * c.value) / c.goal)}%`;
-      const left = c.goal - c.value, unit = t(c.key === "sat" ? "nut.unit_points" : "nut.unit_g");
-      h("div", "chk-target", c.dir === "min" ? (left > 0 ? t("nut.missing_for", { v: left, unit, target: c.target }) : t("nut.reached", { target: c.target }))
-        : t("nut.of_limit", { pct: (100 * c.value) / c.goal, target: c.target }), r);
-    } else h("div", "chk-target", t("nut.reference", { target: c.target }), r);
-    if (!running) h("p", null, tx(c.text), r);
-    sourcesFold(h("div", null, null, r), c.sources);
+      const left = c.goal - c.value;
+      h("div", "chk-target", c.dir === "min" ? (left > 0 ? t("nut.missing_short", { v: left, goal: c.goal }) : t("nut.reached_short", { goal: c.goal }))
+        : t("nut.of_limit_short", { pct: (100 * c.value) / c.goal }), r);
+    }
+    h("div", "chk-target", t("nut.reference", { target: c.target }), det);
+    if (!running) h("p", null, tx(c.text), det);
+    sourcesFold(h("div", null, null, det), c.sources);
   }
 }
 
@@ -1342,7 +1585,7 @@ function nutWeekChart(box, days) {
     el("rect", { x: bx, y: T, width: bw, height: H - B - T, rx: Math.min(8, bw / 2), fill: "#1f232a" }, s);
     if (vals[i] > 0) el("rect", { x: bx, y: y(vals[i]), width: bw, height: Math.max(2, H - B - y(vals[i])), rx: Math.min(8, bw / 2), class: x.complete ? "bar-food" : "bar-food-dim" }, s);
     if (exps[i]) el("line", { x1: bx + 3, x2: bx + bw - 3, y1: y(exps[i]), y2: y(exps[i]), class: "exp-mark" }, s);
-    el("text", { x: bx + bw / 2, y: H - 5, "text-anchor": "middle" }, s).textContent = wdLetter(x.date);
+    axisText(s, bx + bw / 2, H - 5, wdLetter(x.date), W);
   });
   box.replaceChildren(s);
 }
@@ -1846,16 +2089,19 @@ async function bandAction(action) {
 
 /* ================= view and Back button in the app (Android) ================= */
 // view:begin
-// Android can kill Helio's process while it is in the background: section, day and
-// scroll go to Java (HELIO_SAVE_VIEW, from helio-android.js), which keeps them in the Activity
+// Android can kill Helio's process while it is in the background: section, day, scroll and the open
+// "Details" go to Java (HELIO_SAVE_VIEW, from helio-android.js), which keeps them in the Activity
 // state and passes them back on reopening (HELIO_RESTORE). None of this exists on the server.
 const VIEW_SCROLL_MS = 300;
+const MORE_ID = /^[a-z][a-z0-9_]{0,23}$/, MORE_MAX = 32;  // "Details" names, as Java checks them
 let viewTimer = null, viewLast = "";
 
 function viewSend() {
   viewTimer = null;
   if (!ANDROID || typeof window.HELIO_SAVE_VIEW !== "function") return;
   const v = { tab, date: current, y: Math.max(0, Math.round(window.scrollY || 0)) };
+  const more = [...document.querySelectorAll("details.more[open]")].map((det) => det.dataset.more).filter((k) => MORE_ID.test(k));
+  if (more.length) v.more = more.sort().slice(0, MORE_MAX);
   const key = JSON.stringify(v);
   if (key === viewLast) return;
   viewLast = key;
@@ -1881,6 +2127,10 @@ function viewRestore(r) {
   if (typeof r.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.date <= today()) current = r.date;
   const t = typeof r.tab === "string" ? LEGACY_TABS[r.tab] || r.tab : null;
   if (t && Object.prototype.hasOwnProperty.call(TITLES, t) && t !== tab) show(t);
+  if (Array.isArray(r.more)) {
+    const open = new Set(r.more.filter((k) => typeof k === "string" && MORE_ID.test(k)));
+    for (const det of document.querySelectorAll("details.more")) if (open.has(det.dataset.more)) det.open = true;
+  }
   return Number.isInteger(r.y) && r.y > 0 && r.y <= 1000000 ? r.y : null;
 }
 
@@ -1901,6 +2151,7 @@ function helioBack() {
 function viewInstall() {
   window.helioBack = helioBack;
   window.addEventListener("scroll", viewScrolled, { passive: true });
+  for (const det of document.querySelectorAll("details.more")) det.addEventListener("toggle", viewSave);
   const y = viewRestore(window.HELIO_RESTORE);
   return y;
 }
@@ -2062,9 +2313,10 @@ async function load() {
     const res = await Promise.all([getJson(`/api/summary?date=${current}`), getJson(`/api/trends?end=${current}`),
       getJson(`/api/vitals?end=${current}`), soft(getJson(`/api/week?date=${current}&which=${weekWhich}`)),
       soft(getJson(`/api/strength?date=${current}`)), soft(getJson("/api/plan")), soft(getJson("/api/weight")),
-      soft(getJson(`/api/nutrition?date=${current}`)), soft(getJson("/api/foods"))]);
+      soft(getJson(`/api/nutrition?date=${current}`)), soft(getJson("/api/foods")),
+      soft(getJson(cumUrl()))]);
     if (seq !== loadSeq) return;
-    [S, T, V, WEEK, STRW, PLAN, WEIGHT, NUT, FOODS] = res;
+    [S, T, V, WEEK, STRW, PLAN, WEIGHT, NUT, FOODS, CUM] = res;
     if (S.tz) { TZ = S.tz; I18N.setTimeZone(TZ); }
     $("error").hidden = true;
     loadError = null;
@@ -2085,7 +2337,8 @@ function renderAll() {
   if (loadError) { $("error").textContent = t("err.load", { msg: loadError }); }
   if (!S) return;
   renderSync(S); renderToday(S); renderWeek(WEEK); renderFitness(S, T); renderStrength(STRW); renderSleep(S, T); renderHealth(S, T, V);
-  renderProfile(S); renderPlanCard(PLAN); renderWeightCard(WEIGHT); renderFood(NUT, FOODS); renderCatalog(CATALOG);
+  renderProfile(S); renderPlanCard(PLAN); renderWeightCard(WEIGHT); renderFood(NUT, FOODS); renderCum(NUT && FOODS ? CUM : null);
+  renderCatalog(CATALOG);
   if (!$("aboutSheet").hidden) renderAbout();
   if (BAND) renderBand(BAND);
 }
@@ -2303,8 +2556,29 @@ document.querySelectorAll("[data-band-action]").forEach((b) => b.addEventListene
 document.querySelectorAll("#goalSwitch button").forEach((b) => b.addEventListener("click", () => {
   if (NUT && b.dataset.goal !== NUT.goal) nutSave("/api/goal", { goal: b.dataset.goal }, t("nut.goal_set", { goal: b.textContent.toLowerCase() }));
 }));
-$("nutComplete").addEventListener("click", () => {
-  if (NUT) nutSave("/api/diary", { date: current, op: "complete", complete: !NUT.complete }, t(NUT.complete ? "nut.reopened" : "nut.completed"), { btn: "nutComplete" });
+$("nutComplete").addEventListener("click", async () => {
+  if (!NUT) return;
+  const res = await nutSave("/api/diary", { date: current, op: "complete", complete: !NUT.complete }, t(NUT.complete ? "nut.reopened" : "nut.completed"), { btn: "nutComplete" });
+  if (res && !SETTINGS.hints.includes("day_complete")) {  // first use: from now on the hint is behind the (i) icon
+    try { SETTINGS = { ...SETTINGS, ...(await postJson("/api/settings", { hint: "day_complete" })) }; } catch (e) { return; }
+    if (NUT && FOODS) renderFood(NUT, FOODS);
+  }
+});
+$("nutCompleteInfo").addEventListener("click", () => {
+  const open = $("nutCompleteInfo").getAttribute("aria-expanded") !== "true";
+  $("nutCompleteInfo").setAttribute("aria-expanded", String(open));
+  $("nutCompleteNote").hidden = !open;
+});
+document.querySelectorAll("#cumSwitch button").forEach((b) => b.addEventListener("click", () => {
+  if (b.dataset.p === cumPeriod && CUM) return;
+  cumPeriod = b.dataset.p;
+  loadCum();
+  postJson("/api/balance_from", { period: cumPeriod }).catch((e) => toast(t("err.not_saved", { msg: e.message }), true));
+}));
+$("cumSince").addEventListener("change", async () => {
+  const v = $("cumSince").value;
+  try { await postJson("/api/balance_from", { from: v || null }); } catch (e) { toast(t("err.not_saved", { msg: e.message }), true); return; }
+  loadCum();
 });
 document.querySelectorAll("#foodsSwitch button").forEach((b) => b.addEventListener("click", () => { foodsTab = b.dataset.k; if (FOODS) renderFoodsList(FOODS); }));
 $("foodsSearch").addEventListener("input", () => { if (FOODS) renderFoodsList(FOODS); });
@@ -2402,7 +2676,7 @@ if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWor
 
 async function start() {
   let saved = null;
-  try { saved = (await getJson("/api/settings")).lang || null; } catch (e) { saved = null; }
+  try { SETTINGS = await getJson("/api/settings"); saved = SETTINGS.lang || null; } catch (e) { saved = null; }
   try { await I18N.set(saved); } catch (e) { await I18N.set("en").catch(() => {}); }
   const restoreY = ANDROID ? viewInstall() : null;
   await load();

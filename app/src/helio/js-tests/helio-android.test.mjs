@@ -227,4 +227,9 @@ test("the view goes to Java with a message without answer, only with the expecte
   p.window.HELIO_SAVE_VIEW({ tab: "food", date: "2026-10-12", y: 80, segreto: "x" });
   assert.equal(p.sent.length, 1);
   assert.equal(JSON.stringify(p.sent[0]), JSON.stringify({ type: "view", view: { tab: "food", date: "2026-10-12", y: 80 } }));
+  // the open "Details" travel as a list (Java checks every name); anything else is dropped
+  p.window.HELIO_SAVE_VIEW({ tab: "food", date: "2026-10-12", y: 80, more: ["cum", "comp"] });
+  p.window.HELIO_SAVE_VIEW({ tab: "food", date: "2026-10-12", y: 80, more: "cum" });
+  assert.equal(JSON.stringify(p.sent[1].view.more), JSON.stringify(["cum", "comp"]));
+  assert.equal(p.sent[2].view.more, undefined);
 });

@@ -28,7 +28,8 @@ JAVA = sorted(FLAVOR.glob("java/**/*.java")) if FLAVOR else []
 
 PLACEHOLDER = re.compile(r"\{(\w+)(?::(\w+))?\}")
 FORMATS = {None, "0", "1", "2", "int", "time", "date", "dateshort", "datelong", "weekday", "weekdayshort", "month",
-           "dur", "pct", "list", "raw"}
+           "dur", "pct", "list", "raw", "signed"} | {f"{p}_{d}" for p in ("il", "dal", "al", "del")
+                                                     for d in ("date", "datelong", "dateshort", "month")}
 
 
 def forms(v):
@@ -133,6 +134,27 @@ class Catalogs(unittest.TestCase):
                     for m in PLACEHOLDER.finditer(f):
                         self.assertIn(m.group(2), FORMATS, (key, lang, m.group(0)))
 
+    def test_italian_prepositions_before_dates_use_the_elision_formats(self):
+        # "dal {d:date}" would print "dal 11 febbraio": the preposition goes in the format ({d:dal_date} -> "dall'11")  lang: it
+        bare = re.compile(r"(?i)\b(il|dal|al|del|nel|sul)\s+\{\w+:(date|datelong|dateshort|month)\}")  # lang: it
+        for key, v in CAT["it"].items():
+            for f in forms(v):
+                self.assertNotRegex(f, bare, key)
+        self.assertIn("{from:dal_date} {to:al_date}", CAT["it"]["comp.trend"])
+
+    def test_band_means_only_the_device(self):
+        # in Italian "fascia" is the device; a personal range is an "intervallo", heart rate "zone", steps "livelli"
+        as_range = re.compile(r"(?i)\b(tua|tue|mia|nella|sulla)\s+fasc[ei]a?\b"  # lang: it
+                              r"|\bfasc[ei]a?\s+(personal[ei]|dei|del|delle)\b")  # lang: it
+        for key, v in CAT["it"].items():
+            for f in forms(v):
+                self.assertNotRegex(f, as_range, key)
+        self.assertEqual(CAT["it"]["vit.building"], "Il tuo intervallo personale è in costruzione")  # lang: it
+        # and in English "band" is the device, not a range
+        for key, v in CAT["en"].items():
+            for f in forms(v):
+                self.assertNotRegex(f, r"(?i)\b(your|personal|step)\s+bands?\b|\bin\s+band\b", key)
+
     def test_no_leftover_italian_in_english(self):
         it_words = re.compile(r"\b(?:il|della|degli|delle|nella|sono|giorni|allenamento|riposo|sonno)\b", re.I)  # lang: it
         for key, v in CAT["en"].items():
@@ -142,10 +164,100 @@ class Catalogs(unittest.TestCase):
                 self.assertNotRegex(f, it_words, key)
 
 
+# Plural nouns (and the words that agree with them) a count can govern: "{n} giorni" prints "1 giorni" when n is 1.  # lang: it
+PLURAL_WORDS = {
+    "it": set("giorni anni mesi settimane ore minuti notti passi pesate alimenti prodotti ricette pasti porzioni voci "  # lang: it
+              "caratteri ricerche letture cali punti fonti sedute allenamenti volte risvegli errori salti segmenti "  # lang: it
+              "esercizi misure righe studi prove partecipanti coorti segnalate scartate scartati inclusi esclusi "  # lang: it
+              "corretti corrette aggiunti fatte".split()),  # lang: it
+    "en": set("days years months weeks hours minutes nights steps weigh-ins foods products recipes meals portions entries "
+              "characters searches readings dips points sources sessions workouts times awakenings errors jumps segments "
+              "exercises sets reps measurements rows studies trials participants cohorts".split()),
+}
+# words that end the search for the noun: "{total} come errori" is not "{total} errori"  # lang: it
+NOUN_STOP = set("come per con di del della dei degli nel nella nei negli in su tra da a al as for with of on from to".split())  # lang: it
+# "{a} of {b} days": the noun goes with the second count
+COUNT = re.compile(r"\{(\w+)(?::(?:0|int))?\}(?:\s*(?:/|di|su|of|out of)\s*\{(\w+)(?::(?:0|int))?\})?")  # lang: it
+# Counts that are never 1, so a plural noun is right: thresholds and limits of the code, values shown only above a goal
+NEVER_ONE = {
+    "adv.collecting.text": {"need"}, "adv.collecting.title": {"need"},          # BASE_MIN nights (14)
+    "health.need_days": {"need"}, "nut.need_days": {"need"}, "nut.energy_need": {"need"},  # 3 days
+    "sri.collecting": {"need"},                                                   # SRI_MIN_PAIRS (120 hours)
+    "bc.need": {"weighins", "span"}, "wc.need": {"weighins", "span", "days"},    # WEIGHT_CHECK (4, 21, 21)
+    "wc.short_need": {"need_w", "need_d"}, "comp.short.need": {"weighins", "span"},
+    "bc.short_period": {"span"}, "comp.short.period": {"span"},
+    "comp.trend": {"n", "span"},                                  # computed only with at least 4 weigh-ins over 21 days
+    "comp.choice": {"months"}, "comp.fm_old": {"months"},         # 6 months, flagged only beyond 6
+    "comp.sig.strength": {"ref"}, "bc.sig.better": {"n"}, "bc.sig.mixed": {"n"},  # STRENGTH_WEEK (2 days)
+    "bc.you_why.both_good": {"n"}, "bc.you_why.both_low": {"n"}, "bc.you_why.protein_only": {"n"},
+    "bc.you_why.strength_only": {"n"},
+    "bc.need_measure": {"age", "ahi"}, "err.birth_range": {"hi"},  # ages from PROFILE_AGE (10-110) and the BMI estimate
+    "prof.short": {"age"}, "prof.summary": {"age", "steps"},       # step goal at least 1,000
+    "ins.steps_goal.text": {"steps", "goal"}, "ins.val.steps": {"v"},  # shown only with the step goal reached
+    "ins.who_week.text": {"min"},                                  # shown only above the weekly goal (at least 30)
+    "cat.scan_choose": {"n"},                                      # shown only with more than one product
+    "e.entries_max": {"max"}, "e.export_days": {"max"}, "e.foods_max": {"max"}, "e.items_count": {"max"},
+    "e.meals_max": {"max"}, "e.plan_text_long": {"max"}, "e.portions_max": {"max"}, "e.sets_max": {"max"},
+    "e.text_len": {"max"}, "err.name_invalid": {"max"},
+}
+
+
+def counted_nouns(text, lang):
+    """(count placeholder, words) for each count followed by a plural noun within three words."""
+    for m in COUNT.finditer(text):
+        words = []
+        for w in text[m.end():].split()[:3]:
+            word = w.strip(".,;:()·").lower()
+            if "{" in w or word in NOUN_STOP:
+                break
+            words.append(word)
+            if w != w.rstrip(".,;:()·"):
+                break
+        if any(w in PLURAL_WORDS[lang] for w in words):
+            yield m.group(2) or m.group(1), m.group(0) + " " + " ".join(words)
+
+
+class PluralForms(unittest.TestCase):
+    """A count before a plural noun comes from a plural entry ({"one", "other"} chosen by n) or is never 1;
+    texts with several counts take each one as a message with its own plural ({"$": "spo2.dips", "n": 1})."""
+
+    def test_detector(self):
+        self.assertEqual([g for g, _ in counted_nouns("{dips} cali isolati su {spo2_n}", "it")], ["dips"])  # lang: it
+        self.assertEqual([g for g, _ in counted_nouns("{n} o più giorni", "it")], ["n"])  # lang: it
+        self.assertEqual([g for g, _ in counted_nouns("{d} di {need_d} giorni completi", "it")], ["need_d"])  # lang: it
+        self.assertEqual([g for g, _ in counted_nouns("{min:0} zone minutes", "en")], ["min"])
+        self.assertEqual(list(counted_nouns("{v:0} kcal, {total} come errori; {d:dur} di passi", "it")), [])  # lang: it
+
+    def test_numbers_have_plural_forms(self):
+        found, bad = set(), []
+        for lang in LANGS:
+            for key, v in CAT[lang].items():
+                for form, text in (v.items() if isinstance(v, dict) else [(None, v)]):
+                    for count, words in counted_nouns(text, lang):
+                        if count in NEVER_ONE.get(key, ()):
+                            found.add((key, count))
+                        elif not (isinstance(v, dict) and count == "n" and form != "one"):
+                            bad.append((lang, key, form, words))
+        self.assertEqual(bad, [])
+        # no stale exception
+        self.assertEqual(sorted({(k, c) for k, cs in NEVER_ONE.items() for c in cs} - found), [])
+
+    def test_nested_counts_pick_their_own_form(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "gb.db"
+            build_db(db)
+            h = load_app(db, HELIO_STATE=str(Path(tmp) / "state"))
+            summary = h.tr("it", "quality.summary", hr={"$": "quality.hr", "n": 1, "total": 1410},
+                           motion={"$": "quality.motion", "n": 2}, dips={"$": "spo2.dips", "n": 1}, spo2_n=40)
+            self.assertEqual(summary, "Battito: 1 minuto scartato su 1.410 come errore del sensore. "  # lang: it
+                                      "SpO₂: 2 letture in movimento scartate e 1 calo isolato su 40.")  # lang: it
+            self.assertTrue(h.tr("en", "h.strength.base", min=h.M("common.n_minutes", n=1)).endswith("In the last 7 days: 1 minute."))
+
+
 class KeysUsedExist(unittest.TestCase):
     def check(self, lits, pats, where):
         missing = sorted(k for k in lits if k not in CAT["it"])
-        self.assertEqual(missing, [], f"chiavi usate in {where} ma assenti dai cataloghi")
+        self.assertEqual(missing, [], f"keys used in {where} but missing from the catalogs")
         for p in pats:
             self.assertTrue(any(re.match(p, k) for k in CAT["it"]), f"{where}: no key for the pattern {p}")
 
@@ -170,7 +282,8 @@ class KeysUsedExist(unittest.TestCase):
             found = set()
             for res in (h.summary(DAY), h.trends(DAY), h.vitals(DAY), h.week_summary(DAY), h.strength_day(DAY),
                         h.plan_payload(), h.weight_payload(), h.profile_payload(), h.foods_payload(),
-                        h.nutrition_day(DAY), h.settings_load()):
+                        h.nutrition_day(DAY), h.settings_load(), h.balance_payload(DAY, "28d"),
+                        h.balance_payload(DAY, "since")):
                 message_keys(res, found)
             self.assertGreater(len(found), 100)
             self.assertEqual(sorted(k for k in found if k not in CAT["it"]), [])
@@ -400,14 +513,21 @@ class LanguageSwitch(unittest.TestCase):
             db = Path(tmp) / "gb.db"
             build_db(db)
             h = load_app(db, HELIO_STATE=str(Path(tmp) / "state"))
-            self.assertEqual(h.settings_load(), {"lang": None})  # default: the system language
+            self.assertEqual(h.settings_load(), {"lang": None, "hints": []})  # default: the system language
             h.save_settings({"lang": "en"})
-            self.assertEqual(h.settings_load(), {"lang": "en"})
+            self.assertEqual(h.settings_load(), {"lang": "en", "hints": []})
             with self.assertRaises(h.UserError):
                 h.save_settings({"lang": "fr"})
+            # a usage hint once used: only that field changes, the language stays
+            h.save_settings({"hint": "day_complete"})
+            h.save_settings({"hint": "day_complete"})
+            self.assertEqual(h.settings_load(), {"lang": "en", "hints": ["day_complete"]})
+            for bad in ({"hint": "other"}, {}):
+                with self.assertRaises(h.UserError):
+                    h.save_settings(bad)
             archive = helio_transfer.export_bytes(str(Path(tmp) / "state"))
             _, files = helio_transfer.read_archive(archive)
-            self.assertEqual(json.loads(files["settings.json"]), {"lang": "en"})
+            self.assertEqual(json.loads(files["settings.json"]), {"lang": "en", "hints": ["day_complete"]})
 
     def test_csv_follows_the_language(self):
         with tempfile.TemporaryDirectory() as tmp:

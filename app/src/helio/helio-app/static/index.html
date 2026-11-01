@@ -37,9 +37,11 @@
   <!-- TODAY -->
   <section id="tab-today" class="tab">
     <div class="card plan" id="planCard" hidden><span class="tag" data-i18n="ui.today.planned_today"></span><b id="planText"></b>
-      <div class="advice" id="adviceBox" hidden><b id="adviceTitle"></b><p id="adviceText"></p><div class="h-src" id="adviceSrc"></div></div>
+      <div class="advice" id="adviceBox" hidden><b id="adviceTitle"></b></div>
       <ul class="plan-ex" id="planEx"></ul>
       <button class="w-btn ghost" id="logStrength" hidden data-i18n="strength.log_sets"></button>
+      <details class="more" data-more="today_plan" id="planMore" hidden><summary data-i18n="more.title"></summary>
+        <p class="note" id="adviceText"></p><div id="adviceSrc"></div></details>
     </div>
 
     <div class="hero">
@@ -65,7 +67,11 @@
       </div>
     </div>
 
-    <div id="insights" class="list"></div>
+    <div class="card ins-card" id="insightsCard">
+      <div id="insights" class="ins-rows"></div>
+      <details class="more" data-more="today_insights" id="insightsMore"><summary data-i18n="more.title"></summary>
+        <div id="insightsText"></div></details>
+    </div>
 
     <div class="card week" id="weekCard" hidden>
       <div class="row"><span class="tag t-week" data-i18n="ui.today.week"></span>
@@ -73,7 +79,10 @@
       <h3 id="weekTitle">–</h3>
       <div class="week-days" id="weekDays"></div>
       <div class="week-stats" id="weekStats"></div>
-      <div class="h-src" id="weekSrc"></div>
+      <details class="more" data-more="today_week"><summary data-i18n="more.title"></summary>
+        <div class="week-stats" id="weekMore"></div>
+        <p class="note" data-i18n="wk.refs"></p>
+        <div id="weekSrc"></div></details>
     </div>
 
     <h2 class="section" data-i18n="ui.today.day"></h2>
@@ -91,7 +100,10 @@
       <div id="hrSpark" class="spark"></div>
     </div>
     <div class="grid2">
-      <div class="card stat"><span class="tag t-stress" data-i18n="ui.today.average_stress"></span><b id="stressValue">–</b><small id="stressSub">–</small></div>
+      <div class="card stat"><span class="tag t-stress" data-i18n="ui.today.average_stress"></span><b id="stressValue">–</b><small id="stressSub">–</small>
+        <span class="pill info vendor" data-i18n="pill.zepp"></span>
+        <details class="more" data-more="today_stress"><summary data-i18n="more.title"></summary>
+          <p class="note" id="todayStressNote"></p><div id="todayStressSrc"></div></details></div>
       <div class="card stat"><span class="tag t-spo2" data-i18n="ui.today.average_spo2"></span><b id="spo2Value">–</b><small id="spo2Sub">–</small></div>
     </div>
   </section>
@@ -104,7 +116,7 @@
 
     <h2 class="section" data-i18n="ui.fitness.key_metrics"></h2>
     <div class="card">
-      <div class="row"><span class="tag t-kcal" data-i18n="ui.fitness.energy_burned"></span><small data-i18n="common.estimate"></small></div>
+      <div class="row"><span class="tag t-kcal" data-i18n="ui.fitness.energy_burned"></span><span class="pill info" data-i18n="common.estimate"></span></div>
       <div class="row big"><b id="fitKcal">–</b><span class="unit" data-i18n="ui.fitness.kcal_today"></span></div>
       <div id="weekKcal" class="chart"></div>
     </div>
@@ -112,31 +124,33 @@
       <div class="row"><span class="tag t-strength" data-i18n="common.strength"></span><small id="strengthWeek"></small></div>
       <div id="strengthList" class="str-list"></div>
       <button class="w-btn ghost" id="strengthOpen" data-i18n="strength.log_sets"></button>
-      <div class="h-src" id="strengthSrc"></div>
+      <details class="more" data-more="fit_strength"><summary data-i18n="more.title"></summary><div id="strengthSrc"></div></details>
     </div>
     <div class="card" id="vo2Card">
       <div class="row"><span class="tag t-vo2" data-i18n="ui.fitness.estimated_vo2max"></span><small data-i18n="ui.fitness.ml_kg_min"></small></div>
       <div class="row big"><b id="vo2Value">–</b><span class="unit" id="vo2Range"></span></div>
       <div id="vo2Chart" class="chart"></div>
       <p class="muted" id="vo2Alt"></p>
-      <p class="note" id="vo2Text"></p>
-      <div class="h-src" id="vo2Src"></div>
+      <details class="more" data-more="fit_vo2"><summary data-i18n="more.title"></summary>
+        <p class="note" id="vo2Text"></p><div id="vo2Src"></div></details>
     </div>
     <div class="card">
-      <div class="row"><span class="tag t-load" data-i18n="ui.fitness.load"></span><small data-i18n="ui.fitness.banister_trimp_28_days"></small></div>
+      <div class="row"><span class="tag t-load" data-i18n="ui.fitness.load"></span><small data-i18n="common.28_days"></small></div>
       <div class="row big"><b id="loadToday">–</b><span class="unit" data-i18n="common.today_lc"></span>
         <span class="side"><span><span data-i18n="common.last_7_days"></span> <b id="loadWeek">–</b></span><span id="loadAvg">–</span></span></div>
       <div id="loadChart" class="chart"></div>
-      <p class="note" id="loadNote"></p>
-      <div id="loadSrc"></div>
+      <details class="more" data-more="fit_load"><summary data-i18n="more.title"></summary>
+        <p class="note" data-i18n="ui.fitness.banister_trimp_28_days"></p>
+        <p class="note" id="loadNote"></p><div id="loadSrc"></div></details>
     </div>
     <div class="card">
-      <div class="row"><span class="tag t-pai" data-i18n="ui.fitness.pai"></span><span class="zepp" id="paiTag" data-i18n="ui.fitness.licensed_algorithm"></span></div>
+      <div class="row"><span class="tag t-pai" data-i18n="ui.fitness.pai"></span><span class="pill info" id="paiTag" data-i18n="pill.zepp"></span></div>
       <div class="row big"><b id="paiWeek">–</b><span class="unit" data-i18n="common.7_days"></span><span class="side"><span><span data-i18n="common.today_lc"></span> <b id="paiToday">–</b></span></span></div>
       <div class="bar pai"><i id="paiFill"></i></div>
       <div class="legend" id="paiLegend"></div>
-      <p class="note" id="paiNote"></p>
-      <div class="h-src" id="paiSrc"></div>
+      <details class="more" data-more="fit_pai"><summary data-i18n="more.title"></summary>
+        <p class="note" data-i18n="ui.fitness.licensed_algorithm"></p>
+        <p class="note" id="paiNote"></p><div id="paiSrc"></div></details>
     </div>
     <div class="card">
       <div class="row"><span class="tag t-zone" data-i18n="ui.fitness.zone_minutes"></span><small data-i18n="common.last_7_days"></small></div>
@@ -144,8 +158,9 @@
       <div class="bar zone"><i id="zoneWeekFill"></i></div>
       <h4 class="sub" data-i18n="ui.fitness.today_zones"></h4>
       <div id="zoneBars" class="zone-bars"></div>
-      <small id="hrmaxLabel" class="note"></small>
-      <div id="hrmaxSrc"></div>
+      <details class="more" data-more="fit_zones"><summary data-i18n="more.title"></summary>
+        <p class="note" data-i18n="fit.zone_who"></p>
+        <p class="note" id="hrmaxLabel"></p><div id="hrmaxSrc"></div></details>
     </div>
     <div class="card">
       <div class="row"><span class="tag t-steps" data-i18n="common.steps"></span><small data-i18n="common.7_days"></small></div>
@@ -159,12 +174,15 @@
     <div class="card sleep-card">
       <div class="row"><span class="tag t-sleep" data-i18n="ui.sleep.last_night"></span><span class="pill score" id="sleepScore" hidden></span></div>
       <h3 id="sleepTitle">–</h3>
-      <p id="sleepText" class="muted"></p>
       <div class="stage-chart" id="stageChart"></div>
       <div class="row meta"><small><span data-i18n="ui.sleep.bed"></span> <b id="sleepBed">–</b></small><small id="sleepNapWrap" hidden><span data-i18n="ui.sleep.naps"></span> <b id="sleepNaps">–</b></small><small><span data-i18n="ui.sleep.source"></span> <b id="sleepSource">–</b></small></div>
+      <details class="more" data-more="sleep_night"><summary data-i18n="more.title"></summary>
+        <p class="note" id="sleepText"></p>
+        <p class="note" id="sleepScoreNote" hidden></p>
+        <p class="note" data-i18n="ui.sleep.stages_times_score_are"></p>
+        <div id="sleepScoreSrc"></div>
+      </details>
     </div>
-
-    <p class="note zepp-note" id="sleepScoreNote" hidden></p>
 
     <div class="card">
       <h3 class="card-title" id="hlTitle" data-i18n="ui.sleep.key_points"></h3>
@@ -175,8 +193,10 @@
       <div class="row"><span class="tag t-sleep" data-i18n="ui.sleep.sleep_regularity"></span><small data-i18n="ui.sleep.last_14_days"></small></div>
       <div class="row big"><b id="sriValue">–</b><span class="unit" id="sriUnit"></span></div>
       <div class="row meta"><small><span data-i18n="ui.sleep.fall_asleep"></span> <b id="sriOnset">–</b></small><small><span data-i18n="ui.sleep.wake_up"></span> <b id="sriWake">–</b></small></div>
-      <p class="note" id="sriText"></p>
-      <div class="h-src" id="sriSrc"></div>
+      <details class="more" data-more="sleep_sri"><summary data-i18n="more.title"></summary>
+        <p class="note" id="sriText"></p>
+        <div id="sriSrc"></div>
+      </details>
     </div>
 
     <h2 class="section" data-i18n="ui.sleep.during_sleep"></h2>
@@ -192,7 +212,6 @@
       <div class="row"><span class="tag t-sleep" data-i18n="tab.sleep"></span><small data-i18n="common.7_days"></small></div>
       <div id="sleepWeek" class="chart"></div>
     </div>
-    <p class="note" data-i18n="ui.sleep.stages_times_score_are"></p>
   </section>
 
   <!-- HEALTH -->
@@ -200,34 +219,38 @@
     <div class="card vitals-card">
       <span class="tag t-vital"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l2-5 4 10 2-5h8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="ui.health.vital_signs"></span></span>
       <h3 id="vitTitle">–</h3>
-      <p id="vitText" class="muted"></p>
       <div class="vit-box">
         <div class="row"><span id="vitName">–</span><span class="pill" id="vitPill" hidden></span></div>
         <div class="row big"><b id="vitValue">–</b><span class="unit" id="vitUnit"></span></div>
         <div id="vitChart" class="chart"></div>
       </div>
       <div class="chips" id="vitChips"></div>
+      <details class="more" data-more="health_vitals"><summary data-i18n="more.title"></summary>
+        <p class="note" id="vitText"></p></details>
     </div>
 
     <div class="card" id="readyCard">
-      <div class="row"><span class="tag t-ready" data-i18n="common.readiness"></span><small data-i18n="common.estimate"></small></div>
+      <div class="row"><span class="tag t-ready" data-i18n="common.readiness"></span><span class="pill info" data-i18n="common.estimate"></span></div>
       <div class="row big"><b id="readyScore">–</b><span class="unit" id="readyLabel"></span></div>
-      <ul class="parts" id="readyParts"></ul>
+      <div class="reason-chips" id="readyParts"></div>
     </div>
 
     <h2 class="section" data-i18n="ui.health.how_you_are_doing"></h2>
-    <div class="card"><div id="healthSummary" class="health-summary"></div>
-      <p class="note" data-i18n="ui.health.ratings_compare_values_thresholds"></p></div>
+    <div class="card" id="healthSummaryCard"><div id="healthSummary" class="health-summary"></div>
+      <details class="more" data-more="health_summary"><summary data-i18n="more.title"></summary>
+        <p class="note" data-i18n="ui.health.ratings_compare_values_thresholds"></p></details></div>
     <div id="healthItems" class="list"></div>
 
     <div class="card" id="stressCard">
-      <div class="row"><span class="tag t-stress" data-i18n="ui.health.stress_during_day"></span><span class="zepp" data-i18n="ui.health.zepp_algorithm"></span></div>
+      <div class="row"><span class="tag t-stress" data-i18n="ui.health.stress_during_day"></span><span class="pill info" data-i18n="pill.zepp"></span></div>
       <small id="stressAvgLbl"></small>
       <div id="stressChart" class="chart"></div>
       <div class="stack" id="stressBar"></div>
       <div class="legend" id="stressLegend"></div>
-      <p class="note" id="stressNote"></p>
-      <div class="h-src" id="stressSrc"></div>
+      <details class="more" data-more="health_stress"><summary data-i18n="more.title"></summary>
+        <p class="note" data-i18n="ui.health.zepp_algorithm"></p>
+        <p class="note" id="stressNote"></p>
+        <div id="stressSrc"></div></details>
     </div>
   </section>
 
@@ -243,7 +266,8 @@
       <div class="bal-bar" id="nutBar"><i id="nutBarIn"></i><span id="nutBarExp"></span></div>
       <div class="stack macro" id="nutSplit"></div>
       <div class="legend" id="nutSplitLegend"></div>
-      <button class="w-btn ghost" id="nutComplete" data-i18n="ui.food.mark_day_as_complete"></button>
+      <div class="complete-row"><button class="w-btn ghost" id="nutComplete" data-i18n="ui.food.mark_day_as_complete"></button>
+        <button class="info-btn" id="nutCompleteInfo" aria-expanded="false" data-i18n-attr="aria-label:hint.what_is_it" hidden>ⓘ</button></div>
       <p class="note" id="nutCompleteNote"></p>
     </div>
 
@@ -265,21 +289,84 @@
     <div class="card" id="nutRecoveryCard" hidden>
       <span class="tag t-run" data-i18n="ui.food.recovery_between_two_workouts"></span>
       <ul id="nutRecoveryPairs" class="parts"></ul>
-      <p class="note" id="nutRecoveryText"></p>
-      <div class="h-src" id="nutRecoverySrc"></div>
+      <details class="more" data-more="nut_recovery"><summary data-i18n="more.title"></summary>
+        <p class="note" id="nutRecoveryText"></p><div id="nutRecoverySrc"></div></details>
     </div>
 
     <div class="card" id="nutWeightCard">
       <div class="row"><span class="tag t-food" data-i18n="ui.food.check_against_weight"></span><span class="pill" id="nutWeightPill" hidden></span></div>
-      <p id="nutWeightText" class="muted"></p>
-      <div class="h-src" id="nutWeightSrc"></div>
+      <p id="nutWeightShort" class="judge"></p>
+      <details class="more" data-more="nut_weight"><summary data-i18n="more.title"></summary>
+        <p id="nutWeightText" class="note"></p><div id="nutWeightSrc"></div></details>
+    </div>
+
+    <div class="card" id="cumCard">
+      <span class="tag t-food" data-i18n="ui.food.cum_title"></span>
+      <div class="seg-switch wide cum-switch" id="cumSwitch" role="group" data-i18n-attr="aria-label:ui.food.periods">
+        <button data-p="week" data-i18n="cum.p.week"></button><button data-p="prev_week" data-i18n="cum.p.prev_week"></button><button data-p="28d" data-i18n="cum.p.28d"></button><button data-p="month" data-i18n="cum.p.month"></button><button data-p="since" data-i18n="cum.p.since"></button></div>
+      <label class="sheet-row" id="cumSinceRow" hidden><span data-i18n="cum.since_label"></span><input id="cumSince" type="date"></label>
+      <small id="cumPeriod"></small>
+      <div id="cumBody">
+        <div class="row big"><b id="cumTotal">–</b><span class="unit" data-i18n="ui.food.kcal"></span>
+          <span class="pills"><span class="pill" id="cumSign"></span><span class="pill info" id="cumUnsure" data-i18n="cum.sign_unsure" hidden></span><span class="pill warn" id="cumPartialPill" data-i18n="cum.partial_pill" hidden></span></span></div>
+        <small id="cumRange"></small>
+        <p class="judge" id="cumDays"></p>
+        <div id="cumChart" class="chart"></div>
+        <div class="legend" id="cumLegend"></div>
+        <p class="judge" id="cumFat"></p>
+      </div>
+      <p class="judge" id="cumEmpty" hidden></p>
+      <details class="more" data-more="cum"><summary data-i18n="more.title"></summary>
+        <p class="note bad" id="cumPartial" hidden></p>
+        <p class="note" id="cumExcluded"></p>
+        <p class="note" id="cumFatNote" data-i18n="cum.fat_note"></p>
+        <p class="note" id="cumChoice"></p>
+        <h4 class="sub" data-i18n="cum.how_title"></h4>
+        <p class="note" data-i18n="cum.how"></p>
+        <div id="cumSrc"></div>
+      </details>
+    </div>
+
+    <div class="card" id="compCard">
+      <span class="tag t-food" data-i18n="ui.food.comp_title"></span>
+      <div id="compBody">
+        <div class="comp-grid">
+          <div><small data-i18n="comp.weight"></small><b id="compWeight">–</b><small id="compWeightRange"></small></div>
+          <div><small data-i18n="comp.fat"></small><b id="compFat">–</b><small id="compFatRange"></small></div>
+          <div><small data-i18n="comp.lean"></small><b id="compLean">–</b><small id="compLeanRange"></small></div>
+        </div>
+        <p class="judge" id="compShare"></p>
+        <div class="row comp-energy"><span data-i18n="comp.energy_title"></span><span class="pill" id="compEnergyPill"></span></div>
+        <div class="comp-chips" id="compChips"></div>
+        <p class="judge" id="compJudge"></p>
+      </div>
+      <p class="judge" id="compEmpty" hidden></p>
+      <details class="more" data-more="comp"><summary data-i18n="more.title"></summary>
+        <p class="note" data-i18n="ui.food.comp_badge"></p>
+        <p class="note" id="compNeed"></p>
+        <div id="compDetails">
+          <p class="note" id="compTrend"></p>
+          <p class="note" id="compFm"></p>
+          <h4 class="sub" data-i18n="comp.energy_title"></h4>
+          <p class="note" id="compEnergy"></p>
+          <h4 class="sub" data-i18n="comp.signals_title"></h4>
+          <p class="note" data-i18n="comp.signals_list"></p>
+          <ul class="parts" id="compSignals"></ul>
+          <p class="note" id="compSignalsText"></p>
+          <p class="note" data-i18n="comp.limits"></p>
+          <p class="note" id="compChoice"></p>
+          <h4 class="sub" data-i18n="cum.how_title"></h4>
+          <p class="note" data-i18n="comp.how"></p>
+        </div>
+        <div id="compSrc"></div>
+      </details>
     </div>
 
     <div class="card" id="nutAthleteCard">
       <div class="row"><span class="tag t-info" data-i18n="ui.food.carbohydrates_athletes"></span><span class="coi warn" data-i18n="ui.food.flagged_reference"></span></div>
       <div class="row big"><b id="nutAthleteValue">–</b><span class="unit" id="nutAthleteUnit"></span></div>
-      <p class="note" id="nutAthleteText"></p>
-      <div class="h-src" id="nutAthleteSrc"></div>
+      <details class="more" data-more="nut_athlete"><summary data-i18n="more.title"></summary>
+        <p class="note" id="nutAthleteText"></p><div id="nutAthleteSrc"></div></details>
     </div>
 
     <div class="card" id="foodsCard">
@@ -288,8 +375,8 @@
       <input class="search" id="foodsSearch" type="search" autocomplete="off" data-i18n-attr="placeholder:common.search;aria-label:ui.food.search_foods">
       <div id="foodsList" class="food-list"></div>
       <div class="export-btns"><button class="add-btn small" id="newFood"><span>+</span> <span data-i18n="ui.food.food"></span></button><button class="add-btn small" id="newRecipe"><span>+</span> <span data-i18n="ui.food.recipe"></span></button><button class="add-btn small" id="newMeal"><span>+</span> <span data-i18n="ui.food.saved_meal"></span></button></div>
-      <p class="note" id="nutMethod"></p>
-      <div class="h-src" id="nutMethodSrc"></div>
+      <details class="more" data-more="nut_method"><summary data-i18n="more.title"></summary>
+        <p class="note" id="nutMethod"></p><div id="nutMethodSrc"></div></details>
     </div>
   </section>
 
@@ -298,28 +385,29 @@
     <div class="card" id="langCard">
       <label class="sheet-row"><span data-i18n="lang.label"></span><select id="langSel">
         <option value="" data-i18n="lang.system"></option><option value="it" data-i18n="lang.name.it"></option><option value="en" data-i18n="lang.name.en"></option></select></label>
-      <small class="muted" data-i18n="lang.note"></small>
+      <details class="more" data-more="prof_lang"><summary data-i18n="more.title"></summary><p class="note" data-i18n="lang.note"></p></details>
     </div>
     <div class="card">
       <div class="row"><h3 class="card-title" data-i18n="ui.profile.profile_used_calculations"></h3><button class="w-btn ghost" id="profOpen" data-i18n="common.edit"></button></div>
-      <p class="muted" id="profileText"></p>
-      <p class="note" data-i18n="ui.profile.calories_basal_metabolic_rate"></p>
-      <div class="h-src" id="kcalSrc"></div>
+      <p class="judge" id="profileShort"></p>
+      <details class="more" data-more="prof_calc"><summary data-i18n="more.title"></summary>
+        <p class="note" id="profileText"></p>
+        <p class="note" data-i18n="ui.profile.calories_basal_metabolic_rate"></p>
+        <div id="kcalSrc"></div></details>
     </div>
     <div class="card" id="weightCard">
       <div class="row"><h3 class="card-title" data-i18n="ui.profile.weight"></h3><button class="w-btn ghost" id="weightOpen" data-i18n="ui.profile.update"></button></div>
       <div class="row big"><b id="weightValue">–</b><span class="unit" data-i18n="ui.profile.kg"></span><small id="weightSrc"></small></div>
-      <p class="note" data-i18n="ui.profile.from_day_you_enter"></p>
+      <details class="more" data-more="prof_weight"><summary data-i18n="more.title"></summary><p class="note" data-i18n="ui.profile.from_day_you_enter"></p></details>
     </div>
     <div class="card" id="planEditCard">
       <div class="row"><h3 class="card-title" data-i18n="plan.title"></h3><button class="w-btn ghost" id="planOpen" data-i18n="common.edit"></button></div>
       <p class="muted" id="planEmpty" hidden data-i18n="plan.empty"></p>
       <ul class="plan-week" id="planWeek"></ul>
-      <small class="note" id="planSource"></small>
+      <details class="more" data-more="prof_plan"><summary data-i18n="more.title"></summary><p class="note" id="planSource"></p></details>
     </div>
     <div class="card" id="catalogCard">
       <h3 class="card-title" data-i18n="cat.title"></h3>
-      <p class="muted" data-i18n="cat.intro"></p>
       <ul class="cat-list" id="catalogList"></ul>
       <div class="export-btns"><button class="w-btn ghost" id="catalogImport" data-i18n="cat.import_file"></button><button class="w-btn ghost" id="catalogRemove" data-i18n="cat.remove_off"></button></div>
       <p class="note" id="catalogStatus" hidden></p>
@@ -327,6 +415,7 @@
       <div class="row"><button class="w-btn ghost" id="catalogBench" data-i18n="cat.bench"></button><small id="catalogBenchOut"></small></div>
       <p class="error" id="catalogErr" hidden></p>
       <button class="w-btn ghost" id="catalogAbout" data-i18n="about.sources_licences"></button>
+      <details class="more" data-more="prof_catalog"><summary data-i18n="more.title"></summary><p class="note" data-i18n="cat.intro"></p></details>
     </div>
     <div class="card" id="exportCard">
       <h3 class="card-title" data-i18n="ui.profile.export_data"></h3>
@@ -336,7 +425,7 @@
       <label class="sheet-row"><span data-i18n="ui.profile.format"></span><select id="exportFmt">
         <option value="eu" data-i18n="ui.profile.decimal_comma_separator"></option><option value="std" data-i18n="ui.profile.decimal_point_separator"></option></select></label>
       <div class="export-btns"><a class="w-btn ghost" id="expDays" download data-i18n="ui.profile.days"></a><a class="w-btn ghost" id="expTrain" download data-i18n="common.trainings"></a><a class="w-btn ghost" id="expStrength" download data-i18n="common.strength"></a><a class="w-btn ghost" id="expFood" download data-i18n="ui.profile.nutrition"></a></div>
-      <p class="note" data-i18n="ui.profile.file_created_by_ritmo"></p>
+      <details class="more" data-more="prof_export"><summary data-i18n="more.title"></summary><p class="note" data-i18n="ui.profile.file_created_by_ritmo"></p></details>
     </div>
     <div class="card">
       <div class="row"><h3 class="card-title" data-i18n="ui.profile.data_cleaning"></h3><small id="qualityDay"></small></div>
@@ -344,17 +433,17 @@
       <div id="qualityRules" class="rules"></div>
     </div>
     <div class="card" id="sourcesCard"><h3 class="card-title" data-i18n="ui.profile.sources_conflicts_interest"></h3>
-      <p class="muted" data-i18n="ui.profile.every_threshold_comes_from"></p>
       <details class="src-all"><summary id="sourcesSummary" data-i18n="ui.profile.show_all_sources"></summary><div id="sourcesList" class="src-list"></div></details>
-      <h4 class="sub" data-i18n="ui.profile.removed_sources"></h4>
-      <ul id="removedList" class="removed"></ul>
+      <details class="src-all"><summary id="removedSummary" data-i18n="ui.profile.removed_sources"></summary><ul id="removedList" class="removed"></ul></details>
+      <details class="more" data-more="prof_sources"><summary data-i18n="more.title"></summary><p class="note" data-i18n="ui.profile.every_threshold_comes_from"></p></details>
     </div>
     <div class="card" id="aboutCard">
       <div class="row"><h3 class="card-title" data-i18n="about.title"></h3><button class="w-btn ghost" id="aboutOpen" data-i18n="about.open"></button></div>
       <p class="muted" data-i18n="about.card"></p>
     </div>
     <div class="card"><h3 class="card-title" data-i18n="ui.profile.where_data_comes_from"></h3>
-      <p class="muted" data-i18n="ui.profile.steps_activities_active_time"></p></div>
+      <p class="judge" data-i18n="prof.data_short"></p>
+      <details class="more" data-more="prof_data"><summary data-i18n="more.title"></summary><p class="note" data-i18n="ui.profile.steps_activities_active_time"></p></details></div>
   </section>
 </main>
 
@@ -422,7 +511,7 @@
 <div class="sheet" id="profSheet" hidden>
   <div class="sheet-body" role="dialog" aria-labelledby="profTitle">
     <div class="row"><h3 id="profTitle" data-i18n="ui.profSheet.profile"></h3><button class="sheet-x" id="profClose" data-i18n-attr="aria-label:common.close">×</button></div>
-    <p class="note" data-i18n="ui.profSheet.it_stays_only_this"></p>
+    <details class="more" data-more="prof_sheet"><summary data-i18n="more.title"></summary><p class="note" data-i18n="ui.profSheet.it_stays_only_this"></p></details>
     <label class="sheet-row"><span data-i18n="ui.profSheet.date_birth"></span><input id="profBirth" type="date"></label>
     <label class="sheet-row"><span data-i18n="ui.profSheet.sex"></span><select id="profSex"><option value="" data-i18n="ui.profSheet.from_gadgetbridge"></option><option value="M" data-i18n="ui.profSheet.male"></option><option value="F" data-i18n="ui.profSheet.female"></option></select></label>
     <label class="sheet-row"><span data-i18n="ui.profSheet.height_cm"></span><input id="profHeight" type="number" inputmode="decimal" min="100" max="250" step="0.5"></label>
@@ -430,7 +519,7 @@
     <label class="sheet-row"><span data-i18n="ui.profSheet.resting_hr_bpm"></span><input id="profRest" type="number" inputmode="numeric" min="30" max="110" step="1"></label>
     <label class="sheet-row"><span data-i18n="ui.profSheet.stride_cm"></span><input id="profStride" type="number" inputmode="numeric" min="30" max="120" step="1"></label>
     <label class="sheet-row"><span data-i18n="ui.profSheet.work_level"></span><select id="profWork"></select></label>
-    <p class="note" id="profWorkNote"></p>
+    <details class="more" data-more="prof_work"><summary data-i18n="more.title"></summary><p class="note" id="profWorkNote"></p></details>
     <h4 class="sub" data-i18n="ui.profSheet.goals"></h4>
     <label class="sheet-row"><span data-i18n="ui.profSheet.steps_per_day"></span><input id="profSteps" type="number" inputmode="numeric" min="1000" max="50000" step="500"></label>
     <label class="sheet-row"><span data-i18n="ui.profSheet.sleep_hours"></span><input id="profSleep" type="number" inputmode="decimal" min="4" max="12" step="0.25"></label>
@@ -438,8 +527,14 @@
     <label class="sheet-row"><span data-i18n="ui.profSheet.zone_minutes_per_week"></span><input id="profZone" type="number" inputmode="numeric" min="30" max="1500" step="10"></label>
     <label class="sheet-row"><span data-i18n="prof.altitude_m"></span><input id="profAltitude" type="number" inputmode="numeric" min="500" max="8849" step="1"></label>
     <label class="sheet-row"><span data-i18n="prof.altitude_name"></span><input id="profAltitudeName" type="text" maxlength="40" autocomplete="off"></label>
-    <p class="note" id="profNote" data-i18n="ui.profSheet.weight_updated_from_weight"></p>
-    <div class="h-src" id="profSrc"></div>
+    <h4 class="sub" data-i18n="ui.profSheet.bf_title"></h4>
+    <label class="sheet-row"><span data-i18n="ui.profSheet.bf_pct"></span><input id="profBf" type="number" inputmode="decimal" min="3" max="70" step="0.1"></label>
+    <label class="sheet-row"><span data-i18n="ui.profSheet.bf_date"></span><input id="profBfDate" type="date"></label>
+    <label class="sheet-row"><span data-i18n="ui.profSheet.bf_method"></span><select id="profBfMethod"><option value="" data-i18n="ui.profSheet.bf_none"></option><option value="dexa" data-i18n="comp.method.dexa"></option><option value="bia" data-i18n="comp.method.bia"></option></select></label>
+    <details class="more" data-more="prof_bf"><summary data-i18n="more.title"></summary><p class="note" data-i18n="ui.profSheet.bf_note"></p></details>
+    <details class="more" data-more="prof_sheet_more"><summary data-i18n="more.title"></summary>
+      <p class="note" id="profNote" data-i18n="ui.profSheet.weight_updated_from_weight"></p>
+      <div id="profSrc"></div></details>
     <p class="error" id="profErr" hidden></p>
     <div class="sheet-actions"><button class="w-btn ghost" id="profReset" data-i18n="ui.profSheet.remove_values_entered"></button><button class="w-btn" id="profSave" data-i18n="common.save"></button></div>
   </div>

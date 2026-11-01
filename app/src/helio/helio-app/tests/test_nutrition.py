@@ -404,9 +404,10 @@ class Diary(StoreBase):
         self.assertEqual(len({e["id"] for e in self.diary()["entries"]}), 20)
 
     def test_goal(self):
-        self.assertEqual(self.h.nutrition_settings(), {"goal": "lose_fat"})     # chosen goal: lose fat
+        self.assertEqual(self.h.nutrition_settings(), {"goal": "lose_fat", "balance_from": None,
+                                                         "balance_period": "28d"})  # chosen goal: lose fat
         self.assertEqual(self.h.save_goal({"goal": "maintain"}), {"ok": True})
-        self.assertEqual(self.h.nutrition_settings(), {"goal": "maintain"})
+        self.assertEqual(self.h.nutrition_settings()["goal"], "maintain")
         for g in ("ingrassare", None, 1):
             with self.assertRaises(ValueError):
                 self.h.save_goal({"goal": g})

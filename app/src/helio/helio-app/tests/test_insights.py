@@ -61,7 +61,10 @@ class SleepHighlights(AppBase):
         res = self.hl(deep=30, rem=140, light=280, total=450)  # 7% deep, 31% REM
         for k in ("deep", "rem"):
             self.assertFalse(res[k]["ok"])
-            self.assertEqual((res[k]["level"], T(res[k]["label"])), (2, "Outside the typical range"))
+            self.assertEqual((res[k]["level"], T(res[k]["label"])), (2, "Unusual"))
+            self.assertEqual(T(res[k]["label"], "it"), "Insolito")  # lang: it
+        short = self.hl(total=300)["duration"]                         # 5 hours: below the ideal
+        self.assertEqual((short["level"], T(short["label"]), T(short["label"], "it")), (1, "Below ideal", "Sotto l'ideale"))  # lang: it
 
     def test_every_highlight_cites_sources(self):
         for x in self.h.sleep_highlights(night()):

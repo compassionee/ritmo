@@ -331,7 +331,7 @@ def linear_trend(xs, ys):
     resid = sum((y - a - b * x) ** 2 for x, y in zip(xs, ys))
     se = math.sqrt(resid / (n - 2) / sxx)
     t = t975(n - 2)
-    return {"slope": b, "lo": b - t * se, "hi": b + t * se, "se": se, "n": n}
+    return {"slope": b, "lo": b - t * se, "hi": b + t * se, "se": se, "n": n, "intercept": a}
 
 
 def weight_rate_bounds(b_lo, b_hi):
@@ -352,3 +352,83 @@ def weight_rate_bounds(b_lo, b_hi):
 def min_weight_change(balance_kcal):
     """Minimum weight change (kg) for a cumulative balance in kcal: all of it as fat (Hall 2008)."""
     return balance_kcal / FAT_KCAL_PER_KG
+
+
+# ---------------------------------------------------------------- body composition (model estimates)
+def lambert_w(x):
+    """Lambert W function, principal branch (w·e^w = x), for x >= 0."""
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or x != x or x < 0:
+        raise ValueError(x)
+    if x == 0:
+        return 0.0
+    if x > math.e:
+        return lambert_w_exp(math.log(x))
+    w = math.log1p(x)  # between W(x) and x on (0, e]: Halley converges from here
+    for _ in range(50):
+        ew = math.exp(w)
+        f = w * ew - x
+        step = f / (ew * (w + 1) - (w + 2) * f / (2 * w + 2))
+        w -= step
+        if abs(step) <= 1e-15 * max(1.0, abs(w)):
+            break
+    return w
+
+
+def lambert_w_exp(lx):
+    """W(e^lx) without computing e^lx (no overflow for large arguments): solves w + ln(w) = lx with Newton."""
+    if lx < 1:
+        return lambert_w(math.exp(lx))
+    w = lx - math.log(lx)  # >= 1 for lx >= 1, below the root: Newton on a concave function stays below and converges
+    for _ in range(60):
+        step = (w + math.log(w) - lx) / (1 + 1 / w)
+        w -= step
+        if abs(step) <= 1e-15 * w:
+            break
+    return w
+
+
+# Forbes (cross-sectional data, mostly women): FFM = 10.4·ln(FM) + c, FM and FFM in kg. Hall 2007 integrates it along
+# the curve for changes of any size, in both directions.
+FORBES_K = 10.4
+
+
+def forbes_change(fm_i, d_bw):
+    """Fat and lean mass change (kg) for a weight change d_bw starting from fat mass fm_i (Hall 2007, eq. 7):
+    FMf = 10.4·W((FMi/10.4)·exp((ΔBW + FMi)/10.4)); ΔFFM = ΔBW − ΔFM. Returns (ΔFM, ΔFFM)."""
+    if not fm_i > 0:
+        raise ValueError(fm_i)
+    lx = math.log(fm_i / FORBES_K) + (d_bw + fm_i) / FORBES_K
+    d_fm = FORBES_K * lambert_w_exp(lx) - fm_i
+    return d_fm, d_bw - d_fm
+
+
+def forbes_lean_share(fm):
+    """Share of a small weight change that is lean mass (Forbes): 10.4 / (10.4 + FM)."""
+    return FORBES_K / (FORBES_K + fm)
+
+
+# Gallagher et al. 2000, equation 5 (4-compartment reference, white and African American adults, BMI up to 35):
+# percentage body fat from 1/BMI, age and sex (1 = male, 0 = female), R = 0.86, SEE 4.98% fat.
+GALLAGHER_SEE = 4.98
+GALLAGHER_BMI = (18.5, 35.0)  # BMI range of the tables (the sample had BMI up to 35)
+GALLAGHER_AGE = (20, 79)      # age range of the tables (20-39, 40-59, 60-79)
+
+
+def gallagher_bf(bmi, age, sex):
+    """Percentage body fat estimated from BMI, age and sex ("M" or "F") with Gallagher 2000 equation 5."""
+    s = 1 if sex == "M" else 0
+    return 64.5 - 848 / bmi + 0.079 * age - 16.4 * s + 0.05 * s * age + 39.0 * s / bmi
+
+
+def composition_change(fm_i, fm_lo, fm_hi, d_bw, d_lo, d_hi):
+    """Fat and lean mass change with the range: the central value uses fm_i and d_bw, the range every combination of
+    initial fat mass (fm_lo, fm_hi) and weight change (d_lo, d_hi, its confidence interval)."""
+    d_fm, d_ffm = forbes_change(fm_i, d_bw)
+    combos = [forbes_change(f, d) for f in (fm_lo, fm_i, fm_hi) for d in (d_lo, d_bw, d_hi)]
+    shares = [forbes_change(f, d_bw)[1] / d_bw if d_bw else forbes_lean_share(f) for f in (fm_lo, fm_i, fm_hi)]
+    return {"fat": d_fm, "fat_range": (min(c[0] for c in combos), max(c[0] for c in combos)),
+            "lean": d_ffm, "lean_range": (min(c[1] for c in combos), max(c[1] for c in combos)),
+            "energy": d_fm * FAT_KCAL_PER_KG + d_ffm * LEAN_KCAL_PER_KG,
+            "energy_range": (min(c[0] * FAT_KCAL_PER_KG + c[1] * LEAN_KCAL_PER_KG for c in combos),
+                             max(c[0] * FAT_KCAL_PER_KG + c[1] * LEAN_KCAL_PER_KG for c in combos)),
+            "lean_share": shares[1], "lean_share_range": (min(shares), max(shares))}

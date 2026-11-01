@@ -201,7 +201,8 @@ class CatalogUI(UIBase):
         expect(self.page.locator("#catalogImport")).to_be_hidden()  # in the browser: no file picker of the app
         expect(self.page.locator("#catalogServerNote")).to_be_visible()
         # only "Import from file": no address field nor "Update from URL" (Ritmo has no network)
-        expect(card.locator("input[type=url], #catalogUrl, #catalogUrlBox, details")).to_have_count(0)
+        expect(card.locator("input[type=url], #catalogUrl, #catalogUrlBox, details:not(.more)")).to_have_count(0)
+        expect(card.locator("details.more input")).to_have_count(0)                   # "Details" holds only the intro text
         self.assertNotIn("https://", card.inner_text())
         expect(self.page.locator("#catalogServerNote")).to_have_text(self.L("cat.server_import"))
         self.assertEqual(self.outside, [])
@@ -274,6 +275,8 @@ class CatalogUI(UIBase):
         (meal,) = data["meals"].values()
         self.assertEqual(meal["items"], [[oats, 40], [copies[bis["ref"]]["id"], 30], [copies[apple["ref"]]["id"], 100]])
         # a second saved meal from the same diary meal uses the copies: no question, no new foods
+        # (first wait for the reload after the save: the diary must already point to the copies)
+        expect(self.page.locator("#foodsCount")).to_contain_text(self.L("food.n_meals", n=1))
         self.meal_card(self.L("meal.breakfast")).locator("button", has_text=self.L("nut.save_as_meal")).click()
         expect(self.page.locator("#mealItems .it-row.it-cat")).to_have_count(0)
         self.page.fill("#mealName", "Colazione 2")

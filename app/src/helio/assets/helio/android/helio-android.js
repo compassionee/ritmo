@@ -23,9 +23,10 @@
   if (window.location.hash) {
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
   }
-  // section, day and scroll to Java: a message without answer, no Python
+  // section, day, scroll and open "Details" to Java: a message without answer, no Python
   window.HELIO_SAVE_VIEW = (view) => {
-    bridge.postMessage(JSON.stringify({ type: "view", view: { tab: view.tab, date: view.date, y: view.y } }));
+    const more = Array.isArray(view.more) ? view.more : undefined;
+    bridge.postMessage(JSON.stringify({ type: "view", view: { tab: view.tab, date: view.date, y: view.y, more } }));
   };
 
   const NO_BODY = new Set([101, 204, 205, 304]);

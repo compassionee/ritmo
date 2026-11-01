@@ -47,7 +47,7 @@ class FoodUI(UIBase):
 
     def chk(self, box, title):
         """Row of a check with that title (the sources inside the row can mention other nutrients)."""
-        return self.page.locator(f"{box} .chk").filter(has=self.page.locator(".row b").get_by_text(title, exact=True))
+        return self.page.locator(f"{box} .chk").filter(has=self.page.locator("summary b").get_by_text(title, exact=True))
 
     def diary(self, d=DAY):
         f = self.state / f"diary-{d:%Y-%m}.json"
@@ -108,7 +108,10 @@ class FoodUI(UIBase):
         self.assertEqual((e["name"], e["g"], e["meal"]), ("Rolled oats", 150, "lunch"))
         # day in progress: no judgement on minimums, only what is missing
         prot = self.chk("#nutDayChecks", self.L("nutr.title.protein"))
-        expect(prot).to_contain_text(self.Lpart("nut.missing_for"))
+        expect(prot.locator(":scope > .chk-target")).to_contain_text(self.Lpart("nut.missing_short"))
+        # whole grams, short line; the EFSA reference is in the row's Details
+        self.assertRegex(prot.locator(":scope > .chk-target").inner_text(), r"^\D*\d+ g\D+\d+ g$")
+        expect(prot.locator("details.chk-row .chk-target")).to_contain_text("EFSA")
         expect(prot.locator(".pill")).to_have_count(0)
 
     def test_label_check_and_validation(self):
@@ -238,7 +241,7 @@ class FoodUI(UIBase):
         self.assertTrue(self.diary()["complete"])
         expect(self.page.locator("#nutDaySub")).to_have_text(self.L("nut.day_complete_lc"))
         prot = self.chk("#nutDayChecks", self.L("nutr.title.protein"))
-        expect(prot.locator(".pill")).to_contain_text(self.L("nut.label_status", label=self.L("nc.protein.below_efsa"), status=self.L("nut.st.certain")))   # 13.5 g
+        expect(prot.locator(".pill")).to_have_text(self.L("nc.protein.below_efsa"))   # 13.5 g: certain, no "· certain"
         expect(prot).to_contain_text(self.page.evaluate("I18N.num(1.9, 1)") + " g/kg")
         self.page.locator("#goalSwitch button", has_text=self.L("ui.food.maintain")).click()
         self.toast(self.L("nut.goal_set", goal=self.L("ui.food.maintain").lower()))
@@ -256,15 +259,17 @@ class FoodUI(UIBase):
             self.api("/api/diary", {"date": d, "op": "add", "meal": "lunch", "food": low, "g": 1000})
             self.api("/api/diary", {"date": d, "op": "complete", "complete": True})
         self.reload()
-        card = self.page.locator("#insights .card", has_text=self.L("tag.nutrition"))
-        expect(card).to_contain_text(self.L("ins.nut.title", name=self.L("nutr.title.fiber"), label=self.L("nc.fiber.below")))
-        card.locator("button.go").click()
+        row = self.page.locator("#insights .ins-row", has_text=self.L("tag.nutrition"))
+        expect(row).to_contain_text(self.L("ins.nut.title", name=self.L("nutr.title.fiber"), label=self.L("nc.fiber.below")))
+        row.click()
         expect(self.page.locator("#tab-food")).to_be_visible()
         expect(self.page.locator("#nutWeekTitle")).to_contain_text(self.Lpart("nut.issues"))
         fiber = self.chk("#nutWeekChecks", self.L("nutr.title.fiber"))
-        expect(fiber.locator(".pill")).to_have_text(self.L("nut.label_status", label=self.L("nc.fiber.below"), status=self.L("nut.st.certain")))
+        expect(fiber.locator(".pill")).to_have_text(self.L("nc.fiber.below"))
         expect(fiber).to_contain_text(self.L("nc.fiber.text")[:30])
-        fiber.locator("summary").click()
+        expect(fiber.locator("details.chk-row > p")).to_be_hidden()                  # explanation in the row's Details
+        fiber.locator("details.chk-row > summary").click()
+        fiber.locator("details.src-fold > summary").click()
         expect(fiber.locator("a").first).to_contain_text("WHO 2023")
         expect(self.page.locator("#nutWeekChart svg rect.bar-food")).to_have_count(3)
 

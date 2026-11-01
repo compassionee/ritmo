@@ -118,6 +118,8 @@ def catalog(lang):
 
 
 def _fmt_value(lang, v, spec):
+    if spec and "_" in spec and spec.split("_")[0] in ("il", "dal", "al", "del"):  # preposition before a date (Italian)
+        return f"{spec.split('_')[0]} {v}"
     if isinstance(v, dict) and "$" in v:
         return tr(lang, v["$"], **{k: x for k, x in v.items() if k != "$"})
     if isinstance(v, (list, tuple)):
@@ -127,6 +129,9 @@ def _fmt_value(lang, v, spec):
         return tr(lang, "fmt.dur_hm", h=h, m=f"{m:02d}") if h else tr(lang, "fmt.dur_m", m=m)
     if spec == "pct" and isinstance(v, (int, float)):
         return _fmt_value(lang, v, "0") + "%"
+    if spec == "signed" and isinstance(v, (int, float)):
+        r = int(round(v))
+        return ("+" if r > 0 else "−" if r < 0 else "") + _fmt_value(lang, abs(r), "int")
     if isinstance(v, (int, float)) and not isinstance(v, bool):
         digits = {"0": 0, "int": 0, "1": 1, "2": 2}.get(spec, 1)
         s = f"{round(v, digits):.{digits}f}" if digits else f"{int(round(v)):,}".replace(",", "_")
@@ -584,10 +589,20 @@ PROFILE_NUMBERS = {
     "zone_goal_week": (int, 30, 1500, "u.min", "pf.zone_goal_week"),
     # optional: an altitude to reach (for example a summit) for the VO2max estimate at altitude
     "altitude_goal_m": (int, 500, 8849, "u.m", "pf.altitude_goal_m"),
+    # optional: a body fat measurement (percentage, with its date and method) for the composition estimate
+    "bf_pct": (float, 3, 70, "u.pct", "pf.bf_pct"),
 }
 PROFILE_AGE = (10, 110)  # allowed ages for the birth date
 PROFILE_NAME_MAX = 40    # name of the altitude goal
-PROFILE_FIELDS = ("birth_date", "sex", "altitude_goal_name", "work_level") + tuple(PROFILE_NUMBERS)
+# Methods of a body fat measurement and their typical error (1 standard deviation, percentage points of body fat):
+# DXA against the 4-compartment model 3.2 (Gallagher 2000, figure 3); bioimpedance against the 4-compartment model,
+# limits of agreement up to 20 points wide (Oliver 2026: 20 / 3.92 = 5.1). Skinfolds and circumferences are not offered:
+# no verified individual error was found for them.
+BF_METHODS = {"dexa": 3.2, "bia": 5.1}
+BF_METHOD_SOURCES = {"dexa": ["gallagher"], "bia": ["oliver_bia"]}
+BF_OLD_DAYS = 180         # Ritmo's choice, not from a source: a measurement older than this before the period is flagged
+BF_FIELDS = ("bf_pct", "bf_date", "bf_method")
+PROFILE_FIELDS = ("birth_date", "sex", "altitude_goal_name", "work_level", "bf_date", "bf_method") + tuple(PROFILE_NUMBERS)
 
 
 def _profile_number(key, v):
@@ -641,6 +656,20 @@ def validate_profile(data):
             if v not in WORK_LEVELS:
                 raise UserError("err.work_level_invalid")
             out[key] = v
+        elif key == "bf_date":
+            if not isinstance(v, str) or not DATE_RE.match(v):
+                raise UserError("err.bf_date_invalid")
+            try:
+                when = date.fromisoformat(v)
+            except ValueError:
+                raise UserError("err.bf_date_invalid") from None
+            if when > now().date() or when.year < 2000:
+                raise UserError("err.bf_date_invalid")
+            out[key] = v
+        elif key == "bf_method":
+            if v not in BF_METHODS:
+                raise UserError("err.bf_method_invalid")
+            out[key] = v
         else:
             out[key] = _profile_number(key, v)
     return out
@@ -664,6 +693,8 @@ def save_profile(body):
             state_delete("profile.json")
         return {"ok": True}
     clean = validate_profile(body.get("profile"))
+    if any(k in clean for k in BF_FIELDS) and not all(k in clean for k in BF_FIELDS):
+        raise UserError("err.bf_incomplete")  # a measurement needs value, date and method
     with _labels_lock:
         if clean:
             state_save("profile.json", clean)
@@ -1782,8 +1813,8 @@ def typed_kcal(t, part, f, p, hr_threshold, load_kg=0.0, rest=None, level=None):
         level = level if level in WORK_LEVELS else WORK_DEFAULT
         kcal, by_hr = work_kcal(part, p, hr_threshold, level)
         met, code_ = WORK_LEVELS[level]
-        return kcal, M("kcal.work", level=M(f"work.{level}"), met=met, code=code_, min=len(part),
-                       steps=sum(r["steps"] for r in part), hr_min=by_hr)
+        return kcal, M("kcal.work", level=M(f"work.{level}"), met=met, code=code_, min=M("common.n_minutes", n=len(part)),
+                       steps=M("kcal.steps", n=sum(r["steps"] for r in part)), hr_min=by_hr)
     if t in ("walk", "hike") and load_kg:
         bmr_min = p["bmr"] / 1440
         eta = 1.2 if t == "hike" else 1.0
@@ -2316,6 +2347,25 @@ SOURCES = {
     "acsm_nutr": {"title": "Thomas, Erdman, Burke 2016, Med Sci Sports Exerc",
                  "url": "https://doi.org/10.1249/MSS.0000000000000852",
                  "kind": "consensus", "coi": "present", "flagged": True},
+    # body composition (checked on 27 October 2026)
+    "hall_forbes": {"title": "Hall 2007, Br J Nutr",
+                    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC2376748/",
+                    "kind": "method", "coi": "not_declared"},
+    "gallagher": {"title": "Gallagher et al. 2000, Am J Clin Nutr",
+                  "url": "https://doi.org/10.1093/ajcn/72.3.694",
+                  "kind": "validation", "coi": "not_declared"},
+    "oliver_bia": {"title": "Oliver et al. 2026, J Funct Morphol Kinesiol",
+                   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12922097/",
+                   "kind": "systematic_review", "coi": "present", "flagged": True},
+    "burrows": {"title": "Burrows et al. 2019, Front Endocrinol",
+                "url": "https://doi.org/10.3389/fendo.2019.00850",
+                "kind": "systematic_review", "coi": "none"},
+    "wycherley": {"title": "Wycherley et al. 2012, Am J Clin Nutr",
+                  "url": "https://doi.org/10.3945/ajcn.112.044321",
+                  "kind": "meta_analysis", "coi": "not_declared"},
+    "sardeli": {"title": "Sardeli et al. 2018, Nutrients",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5946208/",
+                "kind": "meta_analysis", "coi": "none"},
 }
 # removed sources: citation and reason (srcrm.<id>.what / srcrm.<id>.why)
 REMOVED_SOURCES = {
@@ -2327,6 +2377,7 @@ REMOVED_SOURCES = {
     "acwr": None,
     "frankenfield": "Frankenfield 2005",
     "iom_cho": "IOM 2005",
+    "weinheimer": "Weinheimer 2010",
 }
 
 
@@ -2420,7 +2471,7 @@ def health(con, d):
         "strength", strength_days if data_days else None, M("unit.days_week"), M("h.period.last7"),
         [(0, 2, "below_guidelines", 1), (2, 8, "within_guidelines", 4)],
         [0, 7],
-        {"base": M("h.strength.base", min=strength_min), 1: M("h.strength.1")},
+        {"base": M("h.strength.base", min=M("common.n_minutes", n=round(strength_min))), 1: M("h.strength.1")},
         ["who", "momma"], len(data_days), 3))
 
     rest_avg = round(mean(rests)) if rests else None
@@ -2531,14 +2582,17 @@ def day_insights(s):
     rb, hb = base.get("rhr") or {}, base.get("hrv") or {}
     if rb.get("mean") is not None and s["hr"]["resting"] and s["hr"]["resting"] > rb["high"]:
         out.append({"tag": "vitals", "tone": "warn", "title": M("ins.rhr_high.title"),
-                    "text": M("ins.rhr_high.text", v=s["hr"]["resting"], lo=rb["low"], hi=rb["high"])})
+                    "text": M("ins.rhr_high.text", v=s["hr"]["resting"], lo=rb["low"], hi=rb["high"]),
+                    "value": M("unit.bpm_v", v=s["hr"]["resting"])})
     if hb.get("status") == "below":
         out.append({"tag": "recovery", "tone": "warn", "title": M("ins.hrv_low.title"),
-                    "text": M("ins.hrv_low.text", avg=hb["avg7"], lo=hb["low"], hi=hb["high"])})
+                    "text": M("ins.hrv_low.text", avg=hb["avg7"], lo=hb["low"], hi=hb["high"]),
+                    "value": M("unit.ms_v", v=hb["avg7"])})
     big = max(s.get("trainings") or s["workouts"], key=lambda w: w.get("trimp", 0), default=None)
     if s["active_min"] >= 120:
         out.append({"tag": "fitness", "tone": "good", "title": M("ins.big_day.title"),
-                    "text": M("ins.big_day.text", active=s["active_min"], steps=s["steps"], zone=s["zone_minutes"])})
+                    "text": M("ins.big_day.text", active=s["active_min"], steps=M("fit.steps_n", n=s["steps"]),
+                                      zone=M("ins.zone_min", n=s["zone_minutes"]))})
     elif big and big["duration_min"] >= 20:
         out.append({"tag": "fitness", "tone": "good",
                     "title": M("ins.workout.title", name=big["name"], dur=big["duration_min"]),
@@ -2547,13 +2601,16 @@ def day_insights(s):
     if sl:
         si = sleep_insight(sl)
         out.append({"tag": "sleep", "tone": SLEEP_TONE[si["code"]], "title": si["title"],
-                    "text": J(si["text"], M("ins.zepp_score", score=sl["score"]) if sl.get("score") else None)})
+                    "text": J(si["text"], M("ins.zepp_score", score=sl["score"]) if sl.get("score") else None),
+                    "value": M("ins.val.dur", v=sl["total"])})
     if s["zone_minutes_week"] >= s["goals"]["zone_week"]:
         out.append({"tag": "cardio", "tone": "good", "title": M("ins.who_week.title"),
-                    "text": M("ins.who_week.text", min=s["zone_minutes_week"], goal=s["goals"]["zone_week"])})
+                    "text": M("ins.who_week.text", min=s["zone_minutes_week"], goal=s["goals"]["zone_week"]),
+                    "value": M("ins.val.min", v=s["zone_minutes_week"])})
     if s["steps"] >= s["goals"]["steps"]:
         out.append({"tag": "activity", "tone": "good", "title": M("ins.steps_goal.title"),
-                    "text": M("ins.steps_goal.text", steps=s["steps"], goal=s["goals"]["steps"])})
+                    "text": M("ins.steps_goal.text", steps=s["steps"], goal=s["goals"]["steps"]),
+                    "value": M("ins.val.steps", v=s["steps"])})
     nut = s.get("nutrition") or {}
     if nut.get("issues"):
         c = nut["issues"][0]
@@ -2754,8 +2811,8 @@ def daily_advice(plan, base, p):
     rb = (base or {}).get("rhr") or {}
     types = plan.get("types") or []
     sources = src("ais_hrv", "vesterinen", "granero")
-    def out(status, code, text, extra=()):
-        return {"status": status, "title": M(f"adv.{code}.title"), "text": text, "sources": sources + src(*extra)}
+    def out(status, code, text, extra=(), **title):
+        return {"status": status, "title": M(f"adv.{code}.title", **title), "text": text, "sources": sources + src(*extra)}
 
     if not types:
         if plan.get("rest"):
@@ -2764,7 +2821,8 @@ def daily_advice(plan, base, p):
     if types == ["work"]:
         return out("work", "active_day", M("adv.active_day.text"))
     if hb.get("mean") is None:
-        return out("collecting", "collecting", M("adv.collecting.text", need=hb.get("need", BASE_MIN), n=hb.get("n_base", 0)))
+        need, n = hb.get("need", BASE_MIN), hb.get("n_base", 0)
+        return out("collecting", "collecting", M("adv.collecting.text", need=need, n=n), n=n, need=need)
     if hb.get("avg7") is None:
         return out("collecting", "few_nights", M("adv.few_nights.text"))
     vals = {"avg": hb["avg7"], "lo": hb["low"], "hi": hb["high"]}
@@ -3305,6 +3363,11 @@ WEIGHT_CHECK = {"weighins": 4, "span": 21, "days": 21}  # weigh-ins, days betwee
 FUEL_TYPES = ("run", "rope", "swim", "hike", "strength")  # workouts that use glycogen
 RECOVERY_H = 8            # Craven 2021: short recovery between two sessions (8 hours or less)
 DEFICIT_MAX = 500         # Murphy & Koehler 2022: beyond about 500 kcal a day lean mass no longer grows
+BALANCE_PERIODS = ("week", "prev_week", "28d", "month", "since")  # cumulative balance: calendar or rolling periods
+BALANCE_DEFAULT = "28d"
+BALANCE_COVERAGE = 0.7    # Ritmo's choice, not from a source: below 70% of the days included the total is partial
+BALANCE_SINCE_MAX = 731   # "since a date": at most two years of days
+STRENGTH_WEEK = 2         # WHO 2020 (Bull): muscle-strengthening activities on 2 or more days a week
 CHECK_ORDER = ("energy", "protein", "fiber", "fat", "sat", "salt", "carbs")
 
 
@@ -3800,7 +3863,44 @@ def apply_to_diary(fid, foods):
 
 def nutrition_settings():
     s = state_load("nutrition.json")
-    return {"goal": s.get("goal") if s.get("goal") in GOALS else "lose_fat"}
+    since = s.get("balance_from")
+    try:
+        since = date.fromisoformat(since).isoformat() if isinstance(since, str) and DATE_RE.match(since) else None
+    except ValueError:
+        since = None
+    period = s.get("balance_period") if s.get("balance_period") in BALANCE_PERIODS else BALANCE_DEFAULT
+    return {"goal": s.get("goal") if s.get("goal") in GOALS else "lose_fat", "balance_from": since,
+            "balance_period": period}
+
+
+def save_balance_from(body):
+    """Period of the cumulative balance and start date of "since a date" (in nutrition.json, so they stay between
+    launches and travel with export and import). Only the fields sent change; "from": null removes the date."""
+    out = {}
+    if "period" in body:
+        if body["period"] not in BALANCE_PERIODS:
+            raise UserError("e.value_invalid")
+        out["balance_period"] = body["period"]
+    if "from" in body:
+        v = body["from"]
+        if v is not None:
+            when = parse_iso(v)
+            if when > now().date() or when.year < 2000:
+                raise UserError("e.date_invalid")
+            v = when.isoformat()
+        out["balance_from"] = v
+    if not out:
+        raise UserError("e.value_invalid")
+    with _labels_lock:
+        s = state_load("nutrition.json")
+        for k, v in out.items():
+            if v is None:
+                s.pop(k, None)
+            else:
+                s[k] = v
+        state_save("nutrition.json", s)
+    ns = nutrition_settings()
+    return {"ok": True, "balance_from": ns["balance_from"], "balance_period": ns["balance_period"]}
 
 
 def save_goal(body):
@@ -4066,15 +4166,21 @@ def ncheck(key, title, status, label, display, target, text, sources, value=None
             "goal": None if goal is None else round(goal, 1), "dir": direction}
 
 
+EFSA_PROTEIN = 0.83  # g/kg a day, EFSA 2012 population reference intake for adults
 PROTEIN_TEXT = {(goal, ok): M(f"nc.protein.{goal}.{'ok' if ok else 'low'}")
                 for goal in ("lose_fat", "maintain") for ok in (False, True)}
 
 
+def protein_reference(goal):
+    """Protein reference (g/kg) and its sources: in a deficit Refalo 2025, when maintaining Morton 2018 (both flagged
+    for conflicts of interest); the EFSA minimum is 0.83 g/kg."""
+    return (1.9, ["efsa_protein", "refalo"]) if goal == "lose_fat" else (1.6, ["efsa_protein", "morton_prot"])
+
+
 def protein_check(it, w, goal):
     g, lo, hi = it["tot"]["protein"], it["lo"]["protein"], it["hi"]["protein"]
-    efsa = 0.83 * w
-    # in a deficit Refalo 2025, when maintaining Morton 2018: both flagged for conflicts of interest
-    ref_k, sources = (1.9, ["efsa_protein", "refalo"]) if goal == "lose_fat" else (1.6, ["efsa_protein", "morton_prot"])
+    efsa = EFSA_PROTEIN * w
+    ref_k, sources = protein_reference(goal)
     ref = ref_k * w
     disp = M("nc.protein.display", g=g, gkg=g / w)
     target = M("nc.protein.target", ref=ref, refk=ref_k, efsa=efsa)
@@ -4195,23 +4301,32 @@ def day_energy(x):
     return {"kcal": k["total"], "range": k["range"], "partial": k["partial"]}
 
 
+def day_balance(k, x, rec, today):
+    """Balance of day k (intake − expenditure, kcal) as (value, lo, hi), with the extremes from the intake range and the
+    expenditure range: lo = intake_lo − expenditure_hi, hi = intake_hi − expenditure_lo. Only a day that is over, with
+    the diary marked complete and not empty, and the band on the wrist for at least 20 hours enters the balance; the
+    others are left out (never estimated). Returns (reason, balance): reason "included", "today", "diary" or "band"."""
+    if date.fromisoformat(k) >= today:
+        return "today", None
+    if not rec or not rec["complete"] or not rec["entries"]:
+        return "diary", None
+    if not x or not x["has_data"] or x["worn_min"] < BALANCE_WORN_MIN:
+        return "band", None
+    it = intake(rec["entries"])
+    return "included", (it["tot"]["kcal"] - x["kcal"]["total"], it["lo"]["kcal"] - x["kcal"]["range"][1],
+                        it["hi"]["kcal"] - x["kcal"]["range"][0])
+
+
 def weight_check(d, hist, diary, today):
     """Check against weight (Hall 2008): is the trend of the weigh-ins compatible with the logged balance?"""
     d0 = d - timedelta(days=27)
     weights = sorted((k, v) for k, v in weights_load().items() if d0.isoformat() <= k <= d.isoformat())
-    bal = []
-    for x in hist:
-        rec = diary.get(x["date"])
-        if not rec or not rec["complete"] or not rec["entries"] or date.fromisoformat(x["date"]) >= today:
-            continue
-        if not x["has_data"] or x["worn_min"] < BALANCE_WORN_MIN:
-            continue
-        it = intake(rec["entries"])
-        bal.append((it["tot"]["kcal"] - x["kcal"]["total"], it["lo"]["kcal"] - x["kcal"]["range"][1],
-                    it["hi"]["kcal"] - x["kcal"]["range"][0]))
+    bal = [b for b in (day_balance(x["date"], x, diary.get(x["date"]), today)[1] for x in hist) if b]
     span = (date.fromisoformat(weights[-1][0]) - date.fromisoformat(weights[0][0])).days if weights else 0
     out = {"weighins": len(weights), "span": span, "days": len(bal), "need": WEIGHT_CHECK,
-           "sources": src("hall"), "status": "collecting"}
+           "sources": src("hall"), "status": "collecting",
+           # same shape in every state: the trend fields are null while collecting
+           "balance": None, "balance_range": None, "trend_week": None, "trend_ci": None, "expected_week": None}
     if len(weights) < WEIGHT_CHECK["weighins"] or span < WEIGHT_CHECK["span"] or len(bal) < WEIGHT_CHECK["days"]:
         out["text"] = M("wc.need", weighins=WEIGHT_CHECK["weighins"], span=WEIGHT_CHECK["span"], days=WEIGHT_CHECK["days"],
                         now_w=len(weights), now_d=len(bal),
@@ -4319,13 +4434,7 @@ def nutrition_analysis(con, d, p, hist):
         avg = intake_mean([intake(diary[k]["entries"]) for k in closed])
         week["intake"] = {k: r1(v) for k, v in avg["tot"].items()}
         week["checks"] = nutrient_checks(avg, w, goal)
-    bal = []
-    for k in closed:
-        x = by_date.get(k)
-        if x and date.fromisoformat(k) < today and x["has_data"] and x["worn_min"] >= BALANCE_WORN_MIN:
-            ik = intake(diary[k]["entries"])
-            bal.append((ik["tot"]["kcal"] - x["kcal"]["total"], ik["lo"]["kcal"] - x["kcal"]["range"][1],
-                        ik["hi"]["kcal"] - x["kcal"]["range"][0]))
+    bal = [b for b in (day_balance(k, by_date.get(k), diary[k], today)[1] for k in closed) if b]
     week["energy_days"] = len(bal)
     if len(bal) >= NUT_WEEK_NEED:
         b, lo, hi = (sum(x[i] for x in bal) / len(bal) for i in range(3))
@@ -4361,6 +4470,220 @@ def nutrition_day(d):
         p = profile(con, d)
         hist = history(con, min(d, now().date()), 28) if d <= now().date() else []
         return nutrition_analysis(con, d, p, hist)
+
+
+def balance_period(period, d, since=None):
+    """First and last day of a period ending with the day shown d: the calendar week (Monday-Sunday) up to d, the whole
+    previous week, the last 28 days, the calendar month up to d, or from a date chosen by the user (at most two years).
+    None when "since" has no date or the date is after d."""
+    monday = d - timedelta(days=d.weekday())
+    if period == "week":
+        return monday, d
+    if period == "prev_week":
+        return monday - timedelta(days=7), monday - timedelta(days=1)
+    if period == "28d":
+        return d - timedelta(days=27), d
+    if period == "month":
+        return d.replace(day=1), d
+    if since is None or since > d:
+        return None
+    return max(since, d - timedelta(days=BALANCE_SINCE_MAX - 1)), d
+
+
+def balance_analysis(d, period, hist, diary, weights, p, goal, today, since=None, bf=None):
+    """Cumulative balance of a period and composition estimate.
+
+    Days enter with the same criteria as the weight check (day_balance); the others are left out, never estimated.
+    The extremes are summed linearly (B_lo = Σ b_lo, B_hi = Σ b_hi): the errors are mostly systematic (same device, same
+    logging habits), so they do not cancel out from day to day and the conservative sum is the honest one."""
+    rng = balance_period(period, d, since)
+    out = {"period": period, "periods": list(BALANCE_PERIODS), "since": since.isoformat() if since else None,
+           "coverage_min": BALANCE_COVERAGE, "sources": src("hall", "burrows", "odriscoll")}
+    if rng is None:
+        out.update(status="need_date", composition=None)
+        return out
+    start, end = rng
+    by_date = {x["date"]: x for x in hist}
+    series, reasons, included = [], {"diary": 0, "band": 0}, []
+    tot = [0.0, 0.0, 0.0]
+    x = start
+    while x <= end:
+        k = x.isoformat()
+        why, b = day_balance(k, by_date.get(k), diary.get(k), today)
+        x += timedelta(days=1)
+        if why == "today":
+            continue  # today is never part of the period's days: it is not over
+        if b:
+            tot = [t + v for t, v in zip(tot, b)]
+            included.append((k, b))
+        else:
+            reasons[why] += 1
+        series.append([k, round(tot[0]), round(tot[1]), round(tot[2]), b is not None])
+    days = len(series)
+    out.update({"start": start.isoformat(), "end": end.isoformat(), "days": days, "included": len(included),
+                "excluded": reasons, "today_in_period": start <= today <= end, "series": series,
+                "clipped": period == "since" and since is not None and start > since})
+    if not included:
+        out.update(status="collecting" if days else "empty",
+                   composition=body_composition(start, end, weights, p, [], by_date, goal, today, bf, diary))
+        return out
+    b, b_lo, b_hi = tot
+    n = len(included)
+    coverage = n / days
+    sign = "deficit" if b < 0 else "surplus" if b > 0 else "even"
+    # fat equivalent, as an upper bound: if part of the change is lean mass, less fat is lost (or gained)
+    fat = None
+    if b < 0:
+        fat = {"dir": "lost", "kg": -b / sci.FAT_KCAL_PER_KG,
+               "range": [max(0.0, -b_hi) / sci.FAT_KCAL_PER_KG, max(0.0, -b_lo) / sci.FAT_KCAL_PER_KG]}
+    elif b > 0:
+        fat = {"dir": "gained", "kg": b / sci.FAT_KCAL_PER_KG,
+               "range": [max(0.0, b_lo) / sci.FAT_KCAL_PER_KG, max(0.0, b_hi) / sci.FAT_KCAL_PER_KG]}
+    if fat:
+        fat = {"dir": fat["dir"], "kg": round(fat["kg"], 2), "range": [round(v, 2) for v in fat["range"]]}
+    out.update({"status": "ok", "total": round(b), "range": [round(b_lo), round(b_hi)], "sign": sign,
+                "sign_sure": b_hi < 0 or b_lo > 0, "coverage": round(coverage, 3), "partial": coverage < BALANCE_COVERAGE,
+                "mean": round(b / n), "mean_range": [round(b_lo / n), round(b_hi / n)], "fat_max": fat,
+                "composition": body_composition(start, end, weights, p, included, by_date, goal, today, bf, diary)})
+    return out
+
+
+def body_measure(p_saved, end):
+    """The user's body fat measurement if complete and taken by the end of the period: (pct, sd, method, date)."""
+    if not all(p_saved.get(k) for k in BF_FIELDS) or p_saved["bf_date"] > end.isoformat():
+        return None
+    return p_saved["bf_pct"], BF_METHODS[p_saved["bf_method"]], p_saved["bf_method"], p_saved["bf_date"]
+
+
+def body_composition(start, end, weights, p, included, by_date, goal, today, bf=None, diary=None):
+    """Fat and lean mass change estimated with a model (Forbes extended by Hall 2007), not measured.
+
+    Weight change from the least-squares line of the weigh-ins (never the difference of two weigh-ins: water and
+    glycogen), over the span of the weigh-ins (no extrapolation). Initial fat mass from the user's measurement (with the
+    typical error of the method) or from BMI, age and sex (Gallagher 2000, ±1 SEE). The range is the minimum and maximum
+    over every combination of initial fat (±1 error) and weight change (95% confidence interval)."""
+    ws = sorted((k, v) for k, v in weights.items() if start.isoformat() <= k <= end.isoformat())
+    span = (date.fromisoformat(ws[-1][0]) - date.fromisoformat(ws[0][0])).days if ws else 0
+    need_profile = [k for k in ("age", "sex", "height") if k in (p.get("missing") or [])]
+    out = {"status": "collecting", "weighins": len(ws), "span": span, "need": {k: WEIGHT_CHECK[k] for k in ("weighins", "span")},
+           "period_days": (end - start).days + 1, "profile_missing": need_profile,
+           "sources": src("hall_forbes", "hall", "gallagher")}
+    if len(ws) < WEIGHT_CHECK["weighins"] or span < WEIGHT_CHECK["span"] or need_profile:
+        out["text"] = J(M("bc.need", weighins=WEIGHT_CHECK["weighins"], span=WEIGHT_CHECK["span"], now_w=len(ws),
+                          now_span=M("common.n_days", n=span))
+                        if len(ws) < WEIGHT_CHECK["weighins"] or span < WEIGHT_CHECK["span"] else None,
+                        M("bc.short_period", span=WEIGHT_CHECK["span"]) if out["period_days"] <= WEIGHT_CHECK["span"] else None,
+                        M("bc.need_profile", fields=[M(f"prof.f.{k}") for k in need_profile]) if need_profile else None)
+        return out
+    first = date.fromisoformat(ws[0][0])
+    tr = sci.linear_trend([(date.fromisoformat(k) - first).days for k, _ in ws], [v for _, v in ws])
+    w0 = tr["intercept"]
+    d_bw, d_lo, d_hi = tr["slope"] * span, tr["lo"] * span, tr["hi"] * span
+    meas = body_measure(bf or {}, end)
+    if meas:
+        pct, sd, method, when = meas
+        fm_src = {"kind": "measured", "method": method, "date": when, "pct": pct, "sd": sd,
+                  "old": (start - date.fromisoformat(when)).days > BF_OLD_DAYS}
+        out["sources"] += src(*BF_METHOD_SOURCES[method])
+    else:
+        bmi = w0 / (p["height"] / 100) ** 2
+        lo_b, hi_b = sci.GALLAGHER_BMI
+        lo_a, hi_a = sci.GALLAGHER_AGE
+        if not (lo_b <= bmi <= hi_b and lo_a <= p["age"] <= hi_a):
+            out.update(status="need_measure", bmi=round(bmi, 1),
+                       text=M("bc.need_measure", bmi=bmi, age=p["age"], blo=lo_b, bhi=hi_b, alo=lo_a, ahi=hi_a))
+            return out
+        pct, sd = sci.gallagher_bf(bmi, p["age"], p["sex"]), sci.GALLAGHER_SEE
+        fm_src = {"kind": "gallagher", "bmi": round(bmi, 1), "pct": round(pct, 1), "sd": sd}
+    fm_i = w0 * pct / 100
+    fm_lo, fm_hi = w0 * max(1.0, pct - sd) / 100, w0 * (pct + sd) / 100
+    c = sci.composition_change(fm_i, fm_lo, fm_hi, d_bw, d_lo, d_hi)
+    r2 = lambda v: round(v, 2)
+    out.update({"status": "ok", "from": ws[0][0], "to": ws[-1][0], "w0": r2(w0), "fm0": r2(fm_i), "fm0_range": [r2(fm_lo), r2(fm_hi)],
+                "fm_src": fm_src, "weight": r2(d_bw), "weight_range": [r2(d_lo), r2(d_hi)], "stable": d_lo <= 0 <= d_hi,
+                "fat": r2(c["fat"]), "fat_range": [r2(v) for v in c["fat_range"]],
+                "lean": r2(c["lean"]), "lean_range": [r2(v) for v in c["lean_range"]],
+                "lean_share": round(100 * c["lean_share"], 1), "lean_share_range": [round(100 * v, 1) for v in c["lean_share_range"]],
+                "forbes_k": sci.FORBES_K, "old_days": BF_OLD_DAYS, "coverage_min": BALANCE_COVERAGE})
+    out["energy"] = composition_energy(c, span, first, date.fromisoformat(ws[-1][0]), included, today)
+    out["signals"] = composition_signals(d_bw, start, end, included, by_date, diary or {}, p, goal)
+    out["sources"] += src("burrows", "odriscoll")
+    return out
+
+
+def composition_energy(c, span, first, last, included, today):
+    """Energy check: the energy of the estimated change (ΔFM·39.5 MJ/kg + ΔFFM·7.6 MJ/kg, Hall 2008) per day against the
+    logged balance of the included days between the first and the last weigh-in. A gap is the estimate of the error of
+    the log or of the expenditure (or water and glycogen)."""
+    days = sum(1 for i in range(span + 1) if first + timedelta(days=i) < today)
+    inside = [b for k, b in included if first.isoformat() <= k <= last.isoformat()]
+    to = min(last, today - timedelta(days=1))  # the logged balance never includes today
+    e = {"days": days, "included": len(inside), "status": "collecting", "from": first.isoformat(), "to": to.isoformat()}
+    if not inside or len(inside) < BALANCE_COVERAGE * days:
+        e["text"] = M("bc.energy.need", pct=100 * BALANCE_COVERAGE, n=len(inside), days=days, **{"from": e["from"], "to": e["to"]})
+        return e
+    b, b_lo, b_hi = (sum(x[i] for x in inside) / len(inside) for i in range(3))
+    k, k_lo, k_hi = c["energy"] / span, c["energy_range"][0] / span, c["energy_range"][1] / span
+    if k_hi < b_lo:
+        status, gap = "faster", b_lo - k_hi
+    elif k_lo > b_hi:
+        status, gap = "slower", k_lo - b_hi
+    else:
+        status, gap = "coherent", 0.0
+    e.update({"status": status, "body": round(k), "body_range": [round(k_lo), round(k_hi)], "logged": round(b),
+              "logged_range": [round(b_lo), round(b_hi)], "gap": round(gap), "diff": round(k - b),
+              "text": M(f"bc.energy.{status}", body=k, blo=k_lo, bhi=k_hi, logged=b, llo=b_lo, lhi=b_hi, gap=gap,
+                        **{"from": e["from"], "to": e["to"]})})
+    return e
+
+
+def composition_signals(d_bw, start, end, included, by_date, diary, p, goal):
+    """Protein, strength training and deficit as signals: no validated equation corrects the model for an individual."""
+    ref_k, psrc = protein_reference(goal)
+    w = p["weight"]
+    prot = None
+    if included:
+        prot = sum(intake(diary[k]["entries"])["tot"]["protein"] for k, _ in included if k in diary) / len(included) / w
+    days = (end - start).days + 1
+    sessions = sum(1 for k, x in by_date.items() if start.isoformat() <= k <= end.isoformat()
+                   for t in x.get("trainings") or [] if training_type(t) == "strength")
+    per_week = sessions * 7 / days
+    deficit = -sum(b[0] for _, b in included) / len(included) if included else None
+    good_p = prot is not None and prot >= ref_k
+    good_s = per_week >= STRENGTH_WEEK
+    over = deficit is not None and deficit > DEFICIT_MAX
+    if d_bw < 0:
+        level = "better" if good_p and good_s else "worse" if not good_p and not good_s and prot is not None else "mixed"
+        # the signals applied to this case, only qualitatively: the model's numbers do not change
+        you = ("no_days" if prot is None else "both_good" if good_p and good_s else "both_low" if not good_p and not good_s
+               else "protein_only" if good_p else "strength_only")
+    else:
+        level = you = "gain"
+    return {"protein_gkg": None if prot is None else round(prot, 2), "protein_ref": ref_k, "protein_efsa": EFSA_PROTEIN,
+            "strength_week": round(per_week, 1), "strength_ref": STRENGTH_WEEK, "sessions": sessions,
+            "deficit": None if deficit is None else round(deficit), "deficit_max": DEFICIT_MAX, "level": level,
+            "protein_ok": None if prot is None else good_p, "strength_ok": good_s, "deficit_ok": not over,
+            # one judgement line; above 500 kcal of deficit the benefit of strength training shrinks (Murphy & Koehler 2022)
+            "you": you, "judgement": M("bc.judge_over" if over and d_bw < 0 else "bc.judge", base=M(f"bc.you.{you}"),
+                                       max=DEFICIT_MAX),
+            "text": J(M("bc.sig.model"), M(f"bc.sig.{level}", ref=ref_k, n=STRENGTH_WEEK),
+                      M(f"bc.you_why.{you}", ref=ref_k, n=STRENGTH_WEEK),
+                      M("bc.sig.deficit_over", v=deficit, max=DEFICIT_MAX) if over else None),
+            "sources": src(*psrc, "wycherley", "sardeli", "who", "murphy_koehler")}
+
+
+def balance_payload(d, period):
+    today = now().date()
+    d = min(d, today)
+    ns = nutrition_settings()
+    since = date.fromisoformat(ns["balance_from"]) if ns["balance_from"] else None
+    rng = balance_period(period, d, since)
+    with closing(connect()) as con:
+        p = profile(con, d)
+        hist = history(con, rng[1], (rng[1] - rng[0]).days + 1) if rng else []
+    diary = diary_days(*rng) if rng else {}
+    return balance_analysis(d, period, hist, diary, state_view("weights.json", weights_load), p, ns["goal"], today,
+                            since, state_view("profile.json", profile_load))
 
 
 def nutrition_brief(n):
@@ -4510,20 +4833,32 @@ def parse_iso(v):
     return date.fromisoformat(v)
 
 
+HINTS = ("day_complete",)  # usage hints shown only until first used, then an (i) icon
+
+
 def settings_load():
     """Interface settings (data folder, included in export and import).
-    lang: "it", "en" or None = system language."""
+    lang: "it", "en" or None = system language; hints: usage hints already used (shown as an icon from then on)."""
     s = state_load("settings.json")
-    return {"lang": s.get("lang") if s.get("lang") in LANGS else None}
+    hints = s.get("hints") if isinstance(s.get("hints"), list) else []
+    return {"lang": s.get("lang") if s.get("lang") in LANGS else None, "hints": [x for x in HINTS if x in hints]}
 
 
 def save_settings(body):
+    """Only the fields sent change: "lang" (None = system language), "hint" (a usage hint now used)."""
+    if "lang" not in body and "hint" not in body:
+        raise UserError("e.value_invalid")
     lang = body.get("lang")
-    if lang is not None and lang not in LANGS:
+    if "lang" in body and lang is not None and lang not in LANGS:
         raise UserError("e.lang_invalid")
+    if "hint" in body and body["hint"] not in HINTS:
+        raise UserError("e.value_invalid")
     with _labels_lock:
         s = state_load("settings.json")
-        s["lang"] = lang
+        if "lang" in body:
+            s["lang"] = lang
+        if "hint" in body:
+            s["hints"] = [x for x in HINTS if x in (settings_load()["hints"] + [body["hint"]])]
         state_save("settings.json", s)
     return {"ok": True, **settings_load()}
 
@@ -4632,6 +4967,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, foods_payload())
             if u.path == "/api/nutrition":
                 return self._json(200, nutrition_day(parse_day(q, "date")))
+            if u.path == "/api/balance":
+                period = q.get("period", [None])[0]  # without a period: the one saved
+                return self._json(200, balance_payload(parse_day(q, "date"), period if period in BALANCE_PERIODS
+                                                       else nutrition_settings()["balance_period"]))
             if u.path == "/api/catalog/search":
                 lim = q.get("limit", ["30"])[0]
                 return self._json(200, catalog_search(q.get("q", [""])[0], q.get("lang", [None])[0],
@@ -4674,7 +5013,8 @@ class Handler(BaseHTTPRequestHandler):
 
     POST_LIMITS = {"/api/label": 4096, "/api/strength": 32768, "/api/plan": 32768, "/api/weight": 1024,
                    "/api/food": 8192, "/api/meal": 8192, "/api/diary": 4096, "/api/goal": 512,
-                   "/api/profile": 2048, "/api/settings": 256, "/api/catalog": 1024}
+                   "/api/profile": 2048, "/api/settings": 256, "/api/catalog": 1024,
+                   "/api/balance_from": 256}
 
     def do_POST(self):
         if not self._authorized():
@@ -4714,6 +5054,8 @@ class Handler(BaseHTTPRequestHandler):
                 res = save_goal(body)
             elif u.path == "/api/profile":
                 res = save_profile(body)
+            elif u.path == "/api/balance_from":
+                res = save_balance_from(body)
             elif u.path == "/api/settings":
                 res = save_settings(body)
             elif u.path == "/api/catalog":

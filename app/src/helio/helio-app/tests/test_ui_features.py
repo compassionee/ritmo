@@ -71,13 +71,19 @@ class UIFeatures(UIBase):
         self.with_plan()
         # Tuesday strength planned, walk and run done: "did other"
         expect(self.page.locator("#weekDays .wd.st-different")).to_have_count(1)
-        expect(self.page.locator("#weekTitle")).to_contain_text(self.L("wk.title_plan", title="", done=0, total=1).lstrip(" ·"))
+        expect(self.page.locator("#weekTitle")).to_contain_text(self.L("wk.title_plan", title="", done=0, n=1).lstrip(" ·"))
 
     def test_advice_box(self):
         expect(self.page.locator("#adviceBox")).to_be_hidden()       # no plan, no advice
         self.with_plan({"2": {"text": "Run", "types": ["run"], "exercises": []}})
         expect(self.page.locator("#adviceBox")).to_be_visible()
-        expect(self.page.locator("#adviceTitle")).to_have_text(self.L("adv.collecting.title"))
+        # still collecting: one discreet line with the nights so far, the explanation in Details
+        expect(self.page.locator("#adviceTitle")).to_contain_text(self.Lpart("adv.collecting.title"))
+        self.assertRegex(self.page.locator("#adviceTitle").inner_text(), r"\d+/\d+")
+        expect(self.page.locator("#adviceBox")).to_have_class("advice a-collecting")
+        expect(self.page.locator("#adviceText")).to_be_hidden()
+        self.page.locator("#planMore > summary").click()
+        expect(self.page.locator("#adviceText")).to_contain_text(self.Lpart("adv.collecting.text"))
         expect(self.page.locator("#adviceSrc summary")).to_have_text(self.L("src.fold", n=3))
         expect(self.page.locator("#logStrength")).to_be_hidden()
 
@@ -101,25 +107,31 @@ class UIFeatures(UIBase):
         expect(self.page.locator("#stressCard")).to_contain_text(self.L("ui.health.zepp_algorithm"))
         expect(self.page.locator("#stressNote")).to_contain_text(self.L("note.zepp")[:40])
         self.tab("fitness")
-        expect(self.page.locator("#paiTag")).to_have_text(self.L("ui.fitness.licensed_algorithm"))
+        expect(self.page.locator("#paiTag")).to_have_text("Zepp")                    # short pill; the label in Details
+        expect(self.page.locator("#tab-fitness details[data-more=fit_pai]")).to_contain_text(self.L("ui.fitness.licensed_algorithm"))
         expect(self.page.locator("#paiNote")).to_contain_text(self.L("note.pai")[:40])
         expect(self.page.locator("#paiSrc summary")).to_contain_text(self.L("src.fold_coi", n=9, coi=1).split("·")[-1].strip())
+        self.page.locator("#tab-fitness details[data-more=fit_pai] > summary").click()   # the sources are in Details
         self.page.click("#paiSrc summary")
         expect(self.page.locator("#paiSrc .coi.warn")).to_have_count(1)
         self.tab("sleep")
         expect(self.page.locator("#sleepScore")).to_contain_text("Zepp")
+        expect(self.page.locator("#sleepScoreNote")).to_be_hidden()                 # the note is in Details
+        self.page.locator(".sleep-card details.more > summary").click()
         expect(self.page.locator("#sleepScoreNote")).to_be_visible()
-        expect(self.page.locator("#sleepHighlights .coi.warn").first).to_be_visible()
+        row = self.page.locator("#sleepHighlights details.hl-row", has=self.page.locator(".coi.warn")).first
+        row.locator("> summary").click()                                           # conflicts: in the row's Details
+        expect(row.locator(".coi.warn").first).to_be_visible()
 
     def test_sources_list(self):
         self.tab("profile")
         n = len(self.h.SOURCES)
         flagged = sum(1 for s in self.h.SOURCES.values() if s["coi"] == "present")
-        self.assertEqual(flagged, 6)
-        expect(self.page.locator("#sourcesSummary")).to_contain_text(self.L("src.show_all", n=n, coi=6))
+        self.assertEqual(flagged, 7)
+        expect(self.page.locator("#sourcesSummary")).to_contain_text(self.L("src.show_all", n=n, coi={"$": "src.flagged", "n": 7}))
         self.page.click("#sourcesSummary")
         expect(self.page.locator("#sourcesList .src-row")).to_have_count(n)
-        expect(self.page.locator("#sourcesList .src-row.coi-present")).to_have_count(6)
+        expect(self.page.locator("#sourcesList .src-row.coi-present")).to_have_count(7)
         expect(self.page.locator("#removedList li")).to_have_count(len(self.h.REMOVED_SOURCES))
         expect(self.page.locator("#removedList")).to_contain_text("Keytel 2005")
         expect(self.page.locator("#removedList")).to_contain_text("IOM 2005")
@@ -233,7 +245,7 @@ class UIFeatures(UIBase):
         expect(self.page.locator("#strengthList")).to_contain_text("Wide-grip pull-ups")
         expect(self.page.locator("#strengthList")).to_contain_text(self.Lpart("str.e1rm_plus"))
         expect(self.page.locator("#strengthList")).to_contain_text(self.L("str.with_kg", kg=12.5))
-        expect(self.page.locator("#strengthWeek")).to_contain_text(self.L("str.week_volume", n=1, sets=4, kg=300))
+        expect(self.page.locator("#strengthWeek")).to_contain_text(self.L("str.week_volume", n=1, sets={"$": "str.n_sets", "n": 4}, kg=300))
         self.page.click("#strengthOpen")                                          # reopening: saved values
         expect(self.page.locator("#strLoad")).to_have_value("12.5")
         expect(self.page.locator("#strLoadNote")).to_have_text("")

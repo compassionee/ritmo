@@ -66,8 +66,9 @@ class Metadata(unittest.TestCase):
     def test_flagged_sources_are_few_and_known(self):
         flagged = {k for k, s in self.h.SOURCES.items() if s.get("flagged")}
         # the three nutrition ones: no independent alternative on protein for strength training (Refalo 2025,
-        # Morton 2018) and the carbohydrate doses for athletes, shown only as a reference (ACSM 2016)
-        self.assertEqual(flagged, {"nsf_q", "ohayon", "pai", "refalo", "morton_prot", "acsm_nutr"})
+        # Morton 2018) and the carbohydrate doses for athletes, shown only as a reference (ACSM 2016); the typical
+        # error of a bioimpedance measurement (Oliver 2026: no independent review against the 4-compartment model)
+        self.assertEqual(flagged, {"nsf_q", "ohayon", "pai", "refalo", "morton_prot", "acsm_nutr", "oliver_bia"})
 
     def test_removed_sources_are_gone(self):
         for k in self.h.REMOVED_SOURCES:
