@@ -16,13 +16,16 @@ account and without network, in any case**: the app has no network permission an
 the phone. Every value comes with the published study or guideline it is compared against.
 
 <p align="center">
-  <img src="docs/screenshots/today.png" alt="Today: cardio minutes, steps, readiness and sleep at a glance" width="19%">
-  <img src="docs/screenshots/sleep.png" alt="Sleep: stages of the night and quality references with sources" width="19%">
-  <img src="docs/screenshots/health.png" alt="Health: resting heart rate against your personal range, readiness" width="19%">
-  <img src="docs/screenshots/fitness.png" alt="Fitness: workouts recognised from the band data, to confirm or change" width="19%">
-  <img src="docs/screenshots/food.png" alt="Food: diary with calories, macronutrients and energy balance" width="19%">
+  <img src="docs/screenshots/today.png" alt="Today: cardio minutes, steps, readiness and sleep at a glance, with one line per insight" width="30%">
+  <img src="docs/screenshots/sleep.png" alt="Sleep: stages of the night and the key points against their references" width="30%">
+  <img src="docs/screenshots/health.png" alt="Health: resting heart rate against your personal range, readiness" width="30%">
 </p>
-<p align="center"><sub>Today · Sleep · Health · Fitness · Food — screenshots taken on synthetic data</sub></p>
+<p align="center">
+  <img src="docs/screenshots/fitness.png" alt="Fitness: workouts recognised from the band data, to confirm or change" width="30%">
+  <img src="docs/screenshots/food.png" alt="Food: diary with calories, macronutrients and the day's energy balance" width="30%">
+  <img src="docs/screenshots/balance.png" alt="Food: cumulative balance over 28 days and estimated change in fat and lean mass" width="30%">
+</p>
+<p align="center"><sub>Today · Sleep · Health · Fitness · Food · Cumulative balance and composition — screenshots taken on synthetic data. Every card shows one line; explanations and sources are one tap away in "Details".</sub></p>
 
 ## Contents
 
@@ -43,6 +46,7 @@ the phone. Every value comes with the published study or guideline it is compare
 | ❤️ **Health** | resting heart rate, HRV, breathing rate, SpO₂ and temperature against *your* normal range, plus a readiness estimate |
 | 🏃 **Fitness** | workouts recognised from steps and heart rate (walking, running, strength…) or added by hand, training load, WHO weekly cardio goal, your own training plan |
 | 🍎 **Food** | food diary with calories and macronutrients, energy balance, saved meals and recipes, barcode scanner |
+| ⚖️ **Balance and composition** | deficit or surplus summed over a week, 28 days, a month or since a date; estimated change in fat and lean mass from your weigh-ins (Forbes/Hall model, with its range and limits) |
 | 🔎 **Food databases on the phone** | generic foods from USDA FoodData Central and ANSES Ciqual (with Italian names) shipped with the app; optionally packaged products from Open Food Facts, imported from a file |
 | 📚 **Sources everywhere** | every threshold links its study; conflicts of interest of the sources are shown |
 | 🌍 **English and Italian** | system language by default, selectable in the Profile |
