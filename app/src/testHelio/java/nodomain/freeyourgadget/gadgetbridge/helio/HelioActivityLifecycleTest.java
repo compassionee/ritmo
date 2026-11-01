@@ -18,6 +18,7 @@ package nodomain.freeyourgadget.gadgetbridge.helio;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -52,6 +53,15 @@ public class HelioActivityLifecycleTest {
     public static class TestHelioActivity extends HelioActivity {
         String pageBackAnswer = "false";
         int endProcessCalls;
+        int startPythonCalls;
+        boolean webViewAtPythonStart;
+
+        @Override
+        void startPython() {
+            startPythonCalls++;
+            webViewAtPythonStart = findViewById(android.R.id.content) != null
+                    && ((ViewGroup) findViewById(android.R.id.content)).getChildCount() > 0;
+        }
 
         @Override
         boolean webViewSupported() {
@@ -84,6 +94,30 @@ public class HelioActivityLifecycleTest {
     private static ActivityController<TestHelioActivity> start(final Bundle saved) {
         final ActivityController<TestHelioActivity> c = Robolectric.buildActivity(TestHelioActivity.class);
         return saved == null ? c.setup() : c.setup(saved);
+    }
+
+    @Test
+    public void longOperationsNeverHoldUpThePageRequests() throws Exception {
+        final TestHelioActivity a = start(null).get();
+        assertNotSame(a.bridgeWork(), a.longWork());
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        a.longWork().execute(() -> {  // a catalog import that takes its time
+            try {
+                release.await(30, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (final InterruptedException ignored) {
+                // the test ends
+            }
+        });
+        // a POST of the page meanwhile: answered at once
+        assertEquals(Integer.valueOf(1), a.bridgeWork().submit(() -> 1).get(5, java.util.concurrent.TimeUnit.SECONDS));
+        release.countDown();
+    }
+
+    @Test
+    public void pythonStartsBeforeTheWebViewIsCreated() {
+        final TestHelioActivity a = start(null).get();
+        assertEquals(1, a.startPythonCalls);
+        assertFalse(a.webViewAtPythonStart);  // in parallel with the WebView, not after the page's first request
     }
 
     @Test

@@ -100,7 +100,13 @@ public class HelioActivity extends Activity {
     private static final String STATE_VIEW = "helio_view";
     private static final String STATE_CSV_PATH = "helio_csv_path";
 
+    /** The page's POST requests (bridge messages). */
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    /**
+     * Long operations (CSV, data export and import, food catalog import), one at a time and never in the way of the
+     * page's requests; the page shows how they go (HelioTaskReporter).
+     */
+    private final ExecutorService longWork = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private WebView webView;
@@ -113,6 +119,8 @@ public class HelioActivity extends Activity {
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
+        final long created = HelioStartup.now();
+        HelioStartup.mark("android.process", HelioStartup.processStart(), created);
         super.onCreate(savedInstanceState);
 
         if (!webViewSupported()) {
@@ -130,11 +138,15 @@ public class HelioActivity extends Activity {
                 .addPathHandler("/", new HelioStaticPathHandler(getAssets()))
                 .build();
         backend = new HelioPythonBackend(this);
+        // Python starts while the WebView is created and the page loads, instead of at the page's first request
+        startPython();
         router = new HelioWebRouter(backend, assetLoader, this::runGbAction, this::isGadgetbridgeRunning);
 
         blockServiceWorkers();
 
+        final long webViewStart = HelioStartup.now();
         webView = new WebView(this);
+        HelioStartup.mark("android.webview", webViewStart, HelioStartup.now());
         final WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(false);
@@ -179,6 +191,12 @@ public class HelioActivity extends Activity {
         }
         webView.loadUrl(HelioWebRouter.startUrl(savedView));
         registerBack();
+        HelioStartup.mark("android.activity", created, HelioStartup.now());
+    }
+
+    /** On the bridge's thread: a POST arriving meanwhile waits for Python anyway. */
+    void startPython() {
+        executor.execute(backend::prewarm);
     }
 
     @Nullable
@@ -382,20 +400,41 @@ public class HelioActivity extends Activity {
             final String path = pendingCsvPath;
             pendingCsvPath = null;
             if (uri != null && path != null) {
-                executor.execute(() -> writeCsv(path, uri));
+                longWork.execute(() -> writeCsv(path, uri));
             }
         } else if (requestCode == REQUEST_EXPORT && uri != null) {
-            executor.execute(() -> exportTo(uri));
+            longWork.execute(() -> exportTo(uri));
         } else if (requestCode == REQUEST_IMPORT && uri != null) {
-            executor.execute(() -> readForImport(uri));
+            longWork.execute(() -> readForImport(uri));
         } else if (requestCode == REQUEST_CATALOG && uri != null) {
-            executor.execute(() -> importCatalog(uri));
+            longWork.execute(() -> importCatalog(uri));
         } else if (requestCode == REQUEST_SCAN) {
             sendToPage("window.helioScanned && window.helioScanned(" + scanResult(resultCode, data) + ")");
         }
     }
 
+    /** Events of a long operation to the page (window.helioTask). */
+    @NonNull
+    HelioTaskReporter task(@NonNull final String name) {
+        final HelioTaskReporter reporter = new HelioTaskReporter(name,
+                json -> sendToPage("window.helioTask && window.helioTask(" + json + ")"));
+        reporter.start();
+        return reporter;
+    }
+
+    /** Tests only: the two queues. */
+    @NonNull
+    ExecutorService bridgeWork() {
+        return executor;
+    }
+
+    @NonNull
+    ExecutorService longWork() {
+        return longWork;
+    }
+
     private void exportTo(@NonNull final Uri target) {
+        final HelioTaskReporter progress = task("export");
         boolean ok;
         try (OutputStream out = getContentResolver().openOutputStream(target, "wt")) {
             if (out == null) {
@@ -407,12 +446,14 @@ public class HelioActivity extends Activity {
             LOG.error("Helio export failed", e);
             ok = false;
         }
+        progress.end(ok);
         final boolean saved = ok;
         mainHandler.post(() -> Toast.makeText(this,
                 saved ? R.string.helio_exported : R.string.helio_export_failed, Toast.LENGTH_LONG).show());
     }
 
     private void readForImport(@NonNull final Uri source) {
+        final HelioTaskReporter progress = task("import");
         final byte[] archive;
         try (InputStream in = getContentResolver().openInputStream(source)) {
             if (in == null) {
@@ -430,20 +471,25 @@ public class HelioActivity extends Activity {
             archive = out.toByteArray();
         } catch (final IOException e) {
             LOG.error("Could not read the Helio archive", e);
+            progress.end(false);
             mainHandler.post(() -> showImportError(getString(R.string.helio_import_unreadable)));
             return;
         }
+        progress.end(true);
         mainHandler.post(() -> new AlertDialog.Builder(this)
                 .setTitle(R.string.helio_import)
                 .setMessage(R.string.helio_import_confirm)
                 .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(R.string.helio_import_do, (d, w) -> executor.execute(() -> importArchive(archive)))
+                .setPositiveButton(R.string.helio_import_do, (d, w) -> longWork.execute(() -> importArchive(archive)))
                 .show());
     }
 
     private void importArchive(@NonNull final byte[] archive) {
+        final HelioTaskReporter progress = task("import");
+        progress.report("run", 0, 0);
         try {
             final JSONObject summary = new JSONObject(backend.importState(archive));
+            progress.end(true);
             final String message = getString(R.string.helio_imported, summary.getInt("files"));
             mainHandler.post(() -> new AlertDialog.Builder(this)
                     .setTitle(R.string.helio_import)
@@ -454,9 +500,11 @@ public class HelioActivity extends Activity {
                     .show());
         } catch (final PyException e) {
             LOG.warn("Helio archive rejected", e);
+            progress.end(false);
             mainHandler.post(() -> showImportError(pythonMessage(e)));
         } catch (final Exception e) {
             LOG.error("Helio import failed", e);
+            progress.end(false);
             mainHandler.post(() -> showImportError(String.valueOf(e.getMessage())));
         }
     }
@@ -467,6 +515,8 @@ public class HelioActivity extends Activity {
      */
     private void importCatalog(@NonNull final Uri source) {
         final File tmp = new File(getCacheDir(), "catalog-import.tar");
+        final HelioTaskReporter progress = task("catalog_import");
+        final long size = sizeOf(source);
         JSONObject result;
         try {
             try (InputStream in = getContentResolver().openInputStream(source);
@@ -483,9 +533,10 @@ public class HelioActivity extends Activity {
                         throw new IOException("package too large");
                     }
                     out.write(buf, 0, n);
+                    progress.report("copy", total, size);
                 }
             }
-            result = new JSONObject(backend.importCatalog(tmp)).put("ok", true);
+            result = new JSONObject(backend.importCatalog(tmp, progress)).put("ok", true);
         } catch (final PyException e) {
             LOG.warn("Food catalog rejected", e);
             result = catalogFailure(pythonMessage(e));
@@ -496,7 +547,21 @@ public class HelioActivity extends Activity {
             //noinspection ResultOfMethodCallIgnored
             tmp.delete();
         }
+        progress.end(result.optBoolean("ok"));
         sendToPage("window.helioCatalogImported && window.helioCatalogImported(" + result + ")");
+    }
+
+    /** Size of a chosen file, 0 when the provider does not say. */
+    private long sizeOf(@NonNull final Uri uri) {
+        try (android.database.Cursor c = getContentResolver().query(uri,
+                new String[]{android.provider.OpenableColumns.SIZE}, null, null, null)) {
+            if (c != null && c.moveToFirst() && !c.isNull(0)) {
+                return c.getLong(0);
+            }
+        } catch (final Exception ignored) {
+            // unknown size: the page shows the copy without a percentage
+        }
+        return 0;
     }
 
     /** {"code": "800..."} or {"error": "permission" | "camera" | "cancel"} for the page. */
@@ -553,6 +618,8 @@ public class HelioActivity extends Activity {
     }
 
     private void writeCsv(@NonNull final String path, @NonNull final Uri target) {
+        final HelioTaskReporter progress = task("csv");
+        progress.report("run", 0, 0);
         final HelioResponse response = router.runBackend("GET", path, new HashMap<>(), new byte[0]);
         boolean ok = response.status == 200;
         if (ok) {
@@ -566,6 +633,7 @@ public class HelioActivity extends Activity {
                 ok = false;
             }
         }
+        progress.end(ok);
         final boolean saved = ok;
         mainHandler.post(() -> Toast.makeText(this,
                 saved ? R.string.helio_saved : R.string.helio_save_failed, Toast.LENGTH_SHORT).show());
@@ -599,6 +667,7 @@ public class HelioActivity extends Activity {
             webView.destroy();
         }
         executor.shutdown();
+        longWork.shutdown();
         super.onDestroy();
         if (isFinishing()) {
             // the :helio process (Python, WebView) ends with the activity

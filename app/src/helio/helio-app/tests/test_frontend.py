@@ -109,7 +109,7 @@ class ApiContract(unittest.TestCase):
         used.discard("android")  # Android app only: see test_android_endpoints_only_in_app
         self.assertEqual(used, {"summary", "trends", "vitals", "label", "week", "strength", "plan", "weight", "export",
                                 "nutrition", "foods", "food", "meal", "diary", "goal", "profile", "settings", "catalog",
-                                "balance"})
+                                "balance", "startup"})
         for ep in used:
             self.assertRegex(SERVER, rf'"/api/{ep}[".]', ep)
 
@@ -128,6 +128,9 @@ class ApiContract(unittest.TestCase):
             self.assertIn("/api/android/", body, name)
         load_band = JS[JS.index("async function loadBand"):]
         self.assertTrue(load_band.split("\n")[1].strip() == "if (!ANDROID) return;")
+        # the Java side of the startup times exists only in the app
+        boot = JS[JS.index("async function renderBoot"):]
+        self.assertIn('if (ANDROID) { try { java = await getJson("/api/android/startup"); }', boot[:boot.index("\n}\n")])
         # bandAction starts only from the menu, which opens only with ANDROID
         self.assertIn('addEventListener("click", () => (ANDROID ? openBand() : show("profile")))', JS)
 

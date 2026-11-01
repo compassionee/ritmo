@@ -4,8 +4,12 @@
 Read-only access to the database, no external dependencies, no requests to the Internet.
 Calories, zones, load and readiness are estimates computed here with published formulas.
 """
+import time as _clock  # before the other imports: the startup timeline measures them too
+_IMPORT_START = _clock.time()
+
 import base64
 from contextlib import closing
+import hashlib
 import hmac
 import json
 import math
@@ -304,6 +308,34 @@ class Memo:
 _colcache = Memo(200)
 _multcache = Memo(200)
 
+# Startup timeline (Profile > About > Startup times): wall clock times (the phone's Java and the page use the same
+# clock), only in memory, never written anywhere. Marks of this module and of the Android bridge, and the first answer
+# of each API path (the path only, never the query with its dates).
+STARTUP_MAX_API = 64
+STARTUP_SKIP = ("/api/startup",)  # asked to show the timeline: not part of the start
+_startup = {"marks": [], "api": {}}
+_startup_lock = threading.Lock()
+
+
+def startup_mark(key, start, end):
+    with _startup_lock:
+        _startup["marks"].append({"key": key, "start": start, "end": end})
+
+
+def startup_api(method, path, start, end):
+    """Keeps the first answer of each path: later ones run with warm caches and say nothing about the start."""
+    if not re.fullmatch(r"/api/[a-z0-9_./-]{1,58}", path) or path in STARTUP_SKIP:
+        return
+    with _startup_lock:
+        if path not in _startup["api"] and len(_startup["api"]) < STARTUP_MAX_API:
+            _startup["api"][path] = {"path": path, "method": method, "start": start, "end": end}
+
+
+def startup_timeline():
+    with _startup_lock:
+        return {"marks": list(_startup["marks"]), "api": sorted(_startup["api"].values(), key=lambda a: a["start"]),
+                "now": time.time()}
+
 
 def clear_caches():
     """Forgets every result computed from the database (tests, change of time zone)."""
@@ -372,15 +404,151 @@ def data_sig(con, ranges):
     return tuple(table_sig(con, t, a, b) for t, a, b in ranges)
 
 
-def by_data(memo, key, con, compute, ranges):
+def by_data(memo, key, con, compute, ranges, disk=None):
     """compute() stored with the rows it read (ranges(result) -> [(table, start, end), ...]) and used again, also
-    after the database changed, as long as those rows are the same."""
+    after the database changed, as long as those rows are the same. disk=(kind, day, inputs): a past day, also kept in
+    the disk cache (see disk_load) for the next start of the app."""
     def fresh():
+        if disk:
+            hit = disk_load(con, *disk)
+            if hit is not None:
+                return hit
         res = compute()
         rr = ranges(res)
-        return {"result": res, "ranges": rr, "sig": data_sig(con, rr)}
+        entry = {"result": res, "ranges": rr, "sig": data_sig(con, rr)}
+        if disk:
+            disk_save(entry, *disk)
+        return entry
     return memo.get(key, fresh, version=con_version(con),
                     still_valid=lambda e: data_sig(con, e["ranges"]) == e["sig"])["result"]
+
+
+# ---------------------------------------------------------------- disk cache of past days
+# The results of past days (activity and calories, sleep of the night, asleep/awake minute by minute) are saved in
+# <data folder>/cache/, one file per day and kind, so that the next start does not compute them again from the
+# minute rows. The folder is never exported (only the known data files are) and an import replaces it with nothing.
+# An entry is used only when everything it was computed from is the same:
+#   - its key: format, app version (the APK's versionCode and install time from Java, or a digest of the code),
+#     device, time zone, day and the other inputs of the kind (profile of the day, labels, plan);
+#   - the rows it read: same signature (how many, the last time, the sums) as now in the database.
+# A file that cannot be read, of another key or with other rows is computed again and replaced.
+CACHE_NAME = "cache"  # helio_transfer.CACHE_NAME
+CACHE_FORMAT = 1
+# what a day keeps on disk: the minute rows are read again only by the day shown (compute_day(full=True))
+DAY_LIGHT_DROP = ("rows", "hrs")
+
+
+def code_digest():
+    """Digest of the code computing the days: a new version of the app never uses the results of the old one."""
+    h = hashlib.sha256()
+    for mod in (__file__, sci.__file__):
+        try:
+            h.update(Path(mod).read_bytes())
+        except OSError:
+            return None
+    return h.hexdigest()[:16]
+
+
+APP_VERSION = E("HELIO_APP_VERSION") or code_digest()  # None: unknown, the disk cache is not used
+_digests = Memo(16)
+
+
+def state_digest(name):
+    """Digest of a data file's content (labels, plan): every day computed with another content is computed again."""
+    def read():
+        try:
+            return hashlib.sha256(state_path(name).read_bytes()).hexdigest()[:16]
+        except OSError:
+            return None
+    return _digests.get(name, read, version=state_version(name))
+
+
+def plan_file_digest():
+    def read():
+        try:
+            return hashlib.sha256(Path(PLAN_FILE).read_bytes()).hexdigest()[:16] if PLAN_FILE else None
+        except OSError:
+            return None
+    return _digests.get(("plan_file", PLAN_FILE), read, version=plan_version()[1])
+
+
+def disk_key(kind, d, inputs):
+    raw = json.dumps([CACHE_FORMAT, APP_VERSION, DEVICE_ID, str(TZ), kind, d.isoformat(), inputs], sort_keys=True)
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def cache_dir():
+    return STATE_DIR / CACHE_NAME
+
+
+def disk_path(kind, d):
+    return cache_dir() / f"{kind}-{d.isoformat()}.json"
+
+
+def disk_load(con, kind, d, inputs):
+    """The saved entry of a past day, if still right: same key and same rows in the database. None otherwise."""
+    if APP_VERSION is None or d >= now().date():
+        return None
+    try:
+        e = json.loads(disk_path(kind, d).read_text())
+        if not isinstance(e, dict) or e.get("key") != disk_key(kind, d, inputs) or "result" not in e \
+                or (kind == "day" and not isinstance(e["result"], dict)):  # a night without data is None
+            return None
+        ranges = [tuple(x) for x in e["ranges"]]
+        sig = data_sig(con, ranges)
+        if json.loads(json.dumps(sig)) != e["sig"]:
+            return None
+    except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
+        return None  # missing, damaged or of another shape: computed again and replaced
+    return {"result": e["result"], "ranges": ranges, "sig": sig}
+
+
+CACHE_KEEP_DAYS = 400  # older days are rarely shown again: their files go at the next start
+CACHE_FILE_RE = re.compile(r"^(?:day|sleep|states)-(\d{4}-\d{2}-\d{2})\.json$")
+
+
+def prune_cache():
+    """Removes the files of days older than CACHE_KEEP_DAYS and what an interrupted write left (.tmp); the others
+    stay. Only names of the cache: nothing else in the folder is touched."""
+    oldest = now().date() - timedelta(days=CACHE_KEEP_DAYS)
+    try:
+        names = [p.name for p in cache_dir().iterdir()]
+    except OSError:
+        return 0
+    removed = 0
+    for name in names:
+        m = CACHE_FILE_RE.match(name)
+        try:
+            old = m and date.fromisoformat(m.group(1)) < oldest
+        except ValueError:
+            old = True  # not a date: never written by this code
+        if old or (name.startswith(".") and name.endswith(".tmp")):
+            try:
+                (cache_dir() / name).unlink()
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
+def disk_save(entry, kind, d, inputs):
+    if APP_VERSION is None or d >= now().date():
+        return
+    res = entry["result"]
+    if kind == "day" and isinstance(res, dict):
+        res = {k: v for k, v in res.items() if k not in DAY_LIGHT_DROP}
+    data = {"key": disk_key(kind, d, inputs), "ranges": entry["ranges"], "sig": entry["sig"], "result": res}
+    path = disk_path(kind, d)
+    tmp = path.with_name(f".{path.name}.{threading.get_ident()}.tmp")
+    try:
+        cache_dir().mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(data, ensure_ascii=False))
+        os.replace(tmp, path)
+    except (OSError, TypeError, ValueError):
+        try:
+            tmp.unlink()
+        except OSError:
+            pass  # a cache that cannot be written is only slower
 
 
 def now_version(con):
@@ -1246,7 +1414,8 @@ def sleep_for(con, d):
     (the band can still update it) once a minute."""
     if d >= now().date():
         return _sleepcache.get((DB, d.isoformat(), "today"), lambda: _sleep_for(con, d), version=now_version(con))
-    return by_data(_sleepcache, (DB, d.isoformat()), con, lambda: _sleep_for(con, d), lambda r: sleep_ranges(d, r))
+    return by_data(_sleepcache, (DB, d.isoformat()), con, lambda: _sleep_for(con, d), lambda r: sleep_ranges(d, r),
+                   disk=("sleep", d, None))
 
 
 def _sleep_for(con, d):
@@ -1985,15 +2154,23 @@ def sync_strength_load(d, load):
 _daycache = Memo(800)
 
 
-def compute_day(con, d, p):
+def compute_day(con, d, p, full=False):
     """The day's activity, workouts and calories. A past day is computed again only if its rows change (a sync of
-    today leaves it as it is), today once a minute; labels, plan and profile are part of the key."""
+    today leaves it as it is), today once a minute; labels, plan and profile are part of the key. A past day can come
+    from the disk cache without its minute rows: full=True (the day shown) always has them."""
     key = (DB, labels_version(), plan_version(), PLAN_FILE, d.isoformat(), json.dumps(p, sort_keys=True))
     if d >= now().date():
         return _daycache.get(key + ("today",), lambda: _compute_day(con, d, p), version=now_version(con))
     a, b = midnight(d), midnight(d + timedelta(days=1))
-    return by_data(_daycache, key, con, lambda: _compute_day(con, d, p),
-                   lambda r: [(ACT, a, b), ("HUAMI_HEART_RATE_RESTING_SAMPLE", a, b), ("BASE_ACTIVITY_SUMMARY", a, b)])
+    ranges = lambda r: [(ACT, a, b), ("HUAMI_HEART_RATE_RESTING_SAMPLE", a, b), ("BASE_ACTIVITY_SUMMARY", a, b)]  # noqa: E731
+    if full:
+        day = by_data(_daycache, key, con, lambda: _compute_day(con, d, p), ranges)
+        if "rows" in day:
+            return day
+        return by_data(_daycache, key + ("full",), con, lambda: _compute_day(con, d, p), ranges)
+    inputs = {"profile": p, "labels": state_digest("labels.json"), "plan": state_digest("plan.json"),
+              "plan_file": plan_file_digest()}
+    return by_data(_daycache, key, con, lambda: _compute_day(con, d, p), ranges, disk=("day", d, inputs))
 
 
 def _compute_day(con, d, p):
@@ -2675,7 +2852,7 @@ def vitals(d, days=30):
 def summary(d):
     with closing(connect()) as con:
         p = profile(con, d)
-        day = compute_day(con, d, p)
+        day = compute_day(con, d, p, full=True)
         hist = history(con, d, 28)
         prev14 = hist[-15:-1]
         sleep = sleep_for(con, d)
@@ -2898,7 +3075,8 @@ def day_states(con, x):
         return _statecache.get((DB, x.isoformat(), "today"), lambda: _day_states(con, x), version=now_version(con))
     a, b = at(x - timedelta(days=1), 18), at(x + timedelta(days=1), 12)
     return by_data(_statecache, (DB, x.isoformat()), con, lambda: _day_states(con, x),
-                   lambda r: [(ACT, a, b), ("HUAMI_SLEEP_SESSION_SAMPLE", midnight(x), midnight(x + timedelta(days=2)))])
+                   lambda r: [(ACT, a, b), ("HUAMI_SLEEP_SESSION_SAMPLE", midnight(x), midnight(x + timedelta(days=2)))],
+                   disk=("states", x, None))
 
 
 def _day_states(con, x):
@@ -4101,12 +4279,12 @@ def catalog_info():
             "sources": {k: v for k, v in hc.SOURCE_INFO.items()}}
 
 
-def catalog_install(path):
+def catalog_install(path, progress=None):
     """Installs a package from a file (import on the phone, or the command line on the server): only the
-    community catalog can be replaced this way."""
+    community catalog can be replaced this way. progress: see helio_catalog.install."""
     with _catalog_lock:
         try:
-            m = hc.install(path, CATALOG_DIR, STATE_DIR, kinds=("off",))
+            m = hc.install(path, CATALOG_DIR, STATE_DIR, kinds=("off",), progress=progress)
         except hc.CatalogError as e:
             raise catalog_error(e)
     return {"ok": True, "kind": m["kind"], "version": m["version"], "rows": m["rows"]}
@@ -4938,11 +5116,20 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(code, json.dumps(obj), "application/json")
 
     def do_GET(self):
+        t = time.time()
+        try:
+            self._get()
+        finally:
+            startup_api("GET", urlparse(self.path).path, t, time.time())
+
+    def _get(self):
         if not self._authorized():
             return self._deny()
         u = urlparse(self.path)
         q = parse_qs(u.query)
         try:
+            if u.path == "/api/startup":
+                return self._json(200, startup_timeline())
             if u.path == "/api/summary":
                 return self._json(200, summary(parse_day(q, "date")))
             if u.path == "/api/settings":
@@ -5017,6 +5204,13 @@ class Handler(BaseHTTPRequestHandler):
                    "/api/balance_from": 256}
 
     def do_POST(self):
+        t = time.time()
+        try:
+            self._post()
+        finally:
+            startup_api("POST", urlparse(self.path).path, t, time.time())
+
+    def _post(self):
         if not self._authorized():
             return self._deny()
         u = urlparse(self.path)
@@ -5163,7 +5357,12 @@ def migrate_state_dir():
             state_load(name)
 
 
+_t = time.time()
+startup_mark("py.import", _IMPORT_START, _t)
 migrate_state_dir()
+startup_mark("py.migrate", _t, _t := time.time())
+prune_cache()
+startup_mark("py.cache_prune", _t, time.time())
 
 if __name__ == "__main__":
     start_lan()

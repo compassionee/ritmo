@@ -73,6 +73,22 @@ permission, and data (band, catalog packages, archives) enters only from the ban
   - every request to other origins gets an empty 403;
   - no access to files or content providers, Safe Browsing and metrics disabled;
   - remote debugging disabled, except in builds with `-PhelioWebViewDebug=true`.
+- **Requests in a row, long operations aside:** the WebView sends the page's requests together from several threads;
+  `helio_android.handle` runs `Handler` one request at a time (in one Python, parallel requests slowed each other
+  down 2-2.5 times; each day was still computed once). The long ones stay out of that queue so the page keeps
+  getting its answers: the CSV export and the catalog speed test run outside the lock; the data export and import
+  and the catalog package import do not go through `handle` and run on a queue of their own in `HelioActivity`
+  (`longWork`), never the one of the page's POSTs. The page shows how they go: `HelioTaskReporter` sends
+  `window.helioTask({task, phase, percent?, end, ok})` (known names only, one event per phase or percentage point,
+  at most every 250 ms), with the bytes copied by Java and, from Python (`HelioProgress`), the bytes unpacked and
+  the steps of the check of the catalog.
+- **Startup times** (Profile > About > Startup times): `HelioStartup` keeps in memory the Java steps (process,
+  Activity, WebView, Python, catalog copy, import and `configure`) and the first answer of each API path as the
+  WebView saw it, waiting for Python included (`GET /api/android/startup`, answered by the router without Python);
+  `helio_app` keeps its own steps and the first answer of each path in `Handler` (`GET /api/startup`, also on the
+  server); the page adds its own (settings, data, drawing). All on the wall clock, so the page puts them on one line
+  from the start of the process; paths without their query, nothing written or sent. `tests/test_perf_startup.py`
+  times a cold start on six months of synthetic minute data.
 - **Static files:** `helio-app/static/` becomes assets (`helio/static/`), served by
   `WebViewAssetLoader` with the same CSP as the server. `sw.js` is not included and service workers are
   blocked.
@@ -92,6 +108,12 @@ permission, and data (band, catalog packages, archives) enters only from the ban
 - **Private data:**
   - Helio's state is in `files/helio-state/`;
   - the profile (measurements and goals) is in `files/helio-config.json`;
+  - past days already computed (activity and calories, the night's sleep, asleep/awake minute by minute) are kept in
+    `files/helio-state/cache/`, one small file per day and kind, so that the next start does not compute them again
+    from the minute rows. An entry is used only with the same app installation (versionCode and install time, passed
+    by `HelioPythonBackend`), device, time zone, profile of the day, labels and plan, and with the same rows in the
+    database (count, last time, sums: a late sync of an old day computes it again); a damaged file is computed again
+    and replaced. The folder is never exported and an import drops it (also from the backup of the old data);
   - there is no default plan: at first the page offers "Create your plan", from scratch or from the
     optional template based on the WHO 2020 guidelines (with its source); the chosen plan is in
     `files/helio-state/plan.json`;

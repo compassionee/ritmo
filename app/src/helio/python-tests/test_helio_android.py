@@ -70,6 +70,130 @@ class BridgeBase(unittest.TestCase):
         cls.tmp.cleanup()
 
 
+class StartupTimeline(BridgeBase):
+    """Profile > About > Startup times: the Python side of the timeline, through the bridge."""
+
+    def test_configure_and_first_answers(self):
+        helio_android.handle("GET", "/api/summary?date=2026-03-10", {})
+        helio_android.handle("GET", "/api/summary?date=2026-03-09", {})
+        status, _, _, body = helio_android.handle("GET", "/api/startup", {})
+        self.assertEqual(status, 200)
+        tl = json.loads(body)
+        keys = [m["key"] for m in tl["marks"]]
+        for key in ("py.environment", "py.find_device", "py.import", "py.migrate"):
+            self.assertIn(key, keys)
+        for m in tl["marks"]:
+            self.assertLessEqual(m["start"], m["end"], m["key"])
+        paths = [a["path"] for a in tl["api"]]
+        self.assertEqual(paths.count("/api/summary"), 1)            # the first answer only
+        self.assertNotIn("/api/startup", paths)                      # asking for the timeline is not part of the start
+        self.assertNotIn("2026", body.decode())                      # no dates: paths without the query
+        self.assertLessEqual(tl["api"][0]["end"], tl["now"])
+
+
+class OneRequestAtATime(BridgeBase):
+    """The WebView sends the page's requests together from several threads: Handler runs them one at a time, with
+    the same answers as one after the other."""
+
+    def test_parallel_requests_do_not_overlap(self):
+        paths = ["/api/summary?date=2026-03-10", "/api/trends?end=2026-03-10", "/api/vitals?end=2026-03-10",
+                 "/api/week?date=2026-03-10&which=auto", "/api/strength?date=2026-03-10", "/api/plan", "/api/weight",
+                 "/api/nutrition?date=2026-03-10", "/api/foods", "/api/balance?date=2026-03-10"]
+        got = {}
+        threads = [threading.Thread(target=lambda p=p: got.__setitem__(p, helio_android.handle("GET", p, {})))
+                   for p in paths]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        spans = sorted((a["start"], a["end"]) for a in self.h.startup_timeline()["api"])
+        self.assertEqual(len(spans), len(paths))
+        for (_, end), (start, _) in zip(spans, spans[1:]):
+            self.assertLessEqual(end, start)                            # never two at once
+        for p in paths:
+            self.assertEqual(got[p][0], 200, p)
+            self.assertEqual(got[p][3], helio_android.handle("GET", p, {})[3], p)  # same as alone
+
+
+class LongOperationsDoNotBlock(BridgeBase):
+    """With the requests in a row, a long operation must not hold up the others: while one is running (simulated:
+    it waits until the test lets it go) the page's other requests answer at once."""
+
+    def run_long(self, start, patch_name, target=None):
+        """Starts a long operation whose slow part is helio_app.<patch_name>; returns (thread, release)."""
+        entered, release = threading.Event(), threading.Event()
+        orig = getattr(self.h, patch_name)
+
+        def slow(*a, **k):
+            entered.set()
+            release.wait(30)
+            return orig(*a, **k)
+        setattr(self.h, patch_name, slow)
+        self.addCleanup(setattr, self.h, patch_name, orig)
+        self.addCleanup(release.set)
+        th = threading.Thread(target=start, daemon=True)
+        th.start()
+        self.assertTrue(entered.wait(10), "the long operation did not start")
+        return th, release
+
+    def assertOthersAnswer(self, long_thread):
+        for path in ("/api/plan", "/api/summary?date=2026-03-10", "/api/settings"):
+            got = {}
+            th = threading.Thread(target=lambda: got.setdefault("r", helio_android.handle("GET", path, {})), daemon=True)
+            th.start()
+            th.join(5)
+            self.assertFalse(th.is_alive(), f"{path} waited for the long operation")
+            self.assertEqual(got["r"][0], 200, path)
+        self.assertTrue(long_thread.is_alive())                       # it was really still running
+
+    def test_csv_export(self):
+        th, release = self.run_long(lambda: helio_android.handle(
+            "GET", "/api/export.csv?kind=days&from=2026-03-01&to=2026-03-10&fmt=eu&lang=en", {}), "export_csv")
+        self.assertOthersAnswer(th)
+        release.set()
+        th.join(10)
+
+    def test_catalog_speed_test(self):
+        th, release = self.run_long(lambda: helio_android.handle("GET", "/api/catalog/bench?lang=en", {}),
+                                    "catalog_bench")
+        self.assertOthersAnswer(th)
+        release.set()
+        th.join(10)
+
+    def test_catalog_package_import(self):
+        reports = []
+
+        class Progress:  # what HelioProgress is in the app
+            def report(self, phase, done, total):
+                reports.append((phase, done, total))
+
+        def start():
+            try:
+                helio_android.catalog_import(str(self.dir / "missing.tar"), "en", Progress())
+            except helio_android.ImportFailed:
+                pass  # the file does not exist: only the waiting matters here
+        th, release = self.run_long(start, "catalog_install")
+        self.assertOthersAnswer(th)
+        release.set()
+        th.join(10)
+
+    def test_progress_reaches_the_app(self):
+        """helio_android passes the app's progress object to the install as a function."""
+        got = []
+
+        class Progress:
+            def report(self, phase, done, total):
+                got.append((phase, done, total))
+        orig = self.h.catalog_install
+        self.h.catalog_install = lambda path, progress=None: (progress("unpack", 5, 10), progress("check", 4, 4),
+                                                              {"ok": True})[-1]
+        try:
+            helio_android.catalog_import("x.tar", "en", Progress())
+        finally:
+            self.h.catalog_install = orig
+        self.assertEqual(got, [("unpack", 5, 10), ("check", 4, 4)])
+
+
 class SameAsServer(BridgeBase):
     """The bridge and the real HTTP server give the same answer, byte for byte."""
 
@@ -244,6 +368,15 @@ class Configure(unittest.TestCase):
                 con.executemany("INSERT INTO DEVICE VALUES (?, ?)", rows)
             con.commit()
         return db
+
+    def test_app_version_keys_the_disk_cache(self):
+        """Java passes versionCode and install time: a new installation never reads the days of the old one."""
+        db = self.make_db([(1, "Amazfit Helio Strap", "AMAZFITHELIOSTRAP")])
+        h = helio_android.configure(str(db), str(self.dir / "state"), None, "Europe/Rome", app_version="270-1730000000000")
+        self.assertEqual(h.APP_VERSION, "270-1730000000000")
+        h = helio_android.configure(str(db), str(self.dir / "state"), None, "Europe/Rome")
+        self.assertNotIn("HELIO_APP_VERSION", os.environ)
+        self.assertEqual(h.APP_VERSION, h.code_digest())         # without it: the digest of the code
 
     def test_finds_helio_strap(self):
         db = self.make_db([(1, "Bip", "AMAZFITBIP"), (4, "Amazfit Helio Strap", "AMAZFITHELIOSTRAP")])

@@ -389,6 +389,11 @@ body.noscroll { overflow: hidden; }
   max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 14px; background: var(--surface-3); color: var(--text);
   font-size: 14.5px; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
 .toast.err { background: #3b1f22; color: #ffb4ab; }
+/* a long operation of the app (catalog import, data export and import, CSV): what and how far; the page stays usable */
+.task-bar { position: fixed; left: 12px; right: 12px; bottom: calc(140px + env(safe-area-inset-bottom)); z-index: 39;
+  display: grid; gap: 6px; padding: 10px 14px; border-radius: 14px; background: var(--surface-3); color: var(--text);
+  font-size: 13.5px; box-shadow: 0 4px 16px rgba(0, 0, 0, .35); pointer-events: none; }
+.task-bar progress { width: 100%; height: 6px; accent-color: var(--accent, #8ab4f8); }
 
 /* advice of the day from HRV */
 .advice { border-radius: 16px; padding: 12px 14px; margin-top: 6px; background: var(--surface-2); display: flex; flex-direction: column; gap: 4px; }
@@ -577,6 +582,15 @@ details.nut-opt summary { cursor: pointer; color: var(--blue); font-size: 13.5px
 .about-list { list-style: none; padding: 0; margin: 6px 0 14px; display: grid; gap: 10px; font-size: 13.5px; }
 .about-list small { display: block; color: var(--muted); }
 .about-list a { color: var(--blue, #8ab4f8); word-break: break-all; }
+/* startup times: when · what · how long */
+.boot-list { list-style: none; padding: 0; margin: 6px 0 12px; font-size: 13px; }
+.boot-list li { display: grid; grid-template-columns: 5.5em 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.boot-list .boot-at, .boot-list .boot-dur { color: var(--muted); font-variant-numeric: tabular-nums; }
+.boot-list .boot-dur { text-align: right; }
+.boot-list .boot-what { overflow-wrap: anywhere; }
+.boot-list small { display: block; color: var(--muted); }
+.boot-list .boot-total { display: block; border-bottom: 0; font-weight: 500; }
+.copy-area { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; }
 
 /* "Details": the same expandable block in every card, closed by default, open state kept in the view */
 details.more { margin-top: 10px; border-top: 1px solid var(--line); }

@@ -51,6 +51,8 @@ import java.util.regex.Pattern;
  *     <li>/api/android/* exists only in the app: the band state (read only) and the actions of the
  *     band menu. An action runs only when it comes as a bridge message from the app origin and
  *     the Python side approves it (X-Helio, JSON, known action).</li>
+ *     <li>GET /api/android/startup is answered here, without Python: the Java side of the startup timeline
+ *     ({@link HelioStartup}). The first answer of every other API path is timed for it.</li>
  * </ul>
  */
 public class HelioWebRouter {
@@ -138,9 +140,18 @@ public class HelioWebRouter {
                 // POST requests go through the bridge, which carries the body
                 return toWebResponse(errorResponse(405, "Method Not Allowed", "err.invalid_request"));
             }
+            if (HelioStartup.PATH.equals(path)) {
+                // the Java side of the startup timeline: answered here, Python is not involved
+                return toWebResponse(new HelioResponse(200, "OK",
+                        Collections.singletonList(new String[]{"Content-Type", "application/json"}),
+                        HelioStartup.json().getBytes(StandardCharsets.UTF_8)));
+            }
             final String query = url.getEncodedQuery();
-            return toWebResponse(runBackend("GET", query != null ? path + "?" + query : path,
-                    trustedHeaders(headers), new byte[0]));
+            final long start = HelioStartup.now();
+            final HelioResponse response = runBackend("GET", query != null ? path + "?" + query : path,
+                    trustedHeaders(headers), new byte[0]);
+            HelioStartup.api(path, start, HelioStartup.now());
+            return toWebResponse(response);
         }
 
         final WebResourceResponse asset = assetLoader.shouldInterceptRequest(url);
@@ -207,8 +218,10 @@ public class HelioWebRouter {
         if (!"POST".equals(method) || !path.startsWith("/api/")) {
             return reply(id, errorResponse(400, "Bad Request", "err.invalid_request"));
         }
+        final long start = HelioStartup.now();
         final HelioResponse response = runBackend("POST", path, trustedHeaders(headers),
                 body.getBytes(StandardCharsets.UTF_8));
+        HelioStartup.api(path, start, HelioStartup.now());
         runApprovedAction(path, response);
         return reply(id, response);
     }

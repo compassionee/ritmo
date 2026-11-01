@@ -33,6 +33,8 @@ MAX_FILE = 8 * 1024 * 1024
 MAX_TOTAL = 64 * 1024 * 1024
 MAX_FILES = 1000
 KEEP_BACKUPS = 3
+# the disk cache of past days inside the data folder (helio_app.CACHE_NAME): never exported, dropped at an import
+CACHE_NAME = "cache"
 
 # measurements and goals: the only settings that move from one device to another
 PROFILE_KEYS = {
@@ -275,6 +277,9 @@ def import_bytes(data, state_dir, keep_backups=KEEP_BACKUPS):
             os.replace(state, backup)
         os.replace(tmp, state)
         _fsync_dir(parent)
+        if backup:
+            # results computed from the old data: never kept, not even in the backup
+            shutil.rmtree(backup / CACHE_NAME, ignore_errors=True)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise

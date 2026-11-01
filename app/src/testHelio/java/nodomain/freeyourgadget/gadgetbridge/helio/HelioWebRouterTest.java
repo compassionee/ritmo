@@ -195,6 +195,49 @@ public class HelioWebRouterTest {
     }
 
     @Test
+    public void startupTimelineIsAnsweredWithoutPythonAndKeepsOnlyFirstAnswers() throws Exception {
+        HelioStartup.clear();
+        HelioStartup.mark("android.python", 1000, 1500);
+        HelioStartup.mark("android.python", 2000, 2500);  // a second Activity in the process: kept once
+        router.intercept(Uri.parse(HelioWebRouter.ORIGIN + "/api/summary?date=2026-03-10"), "GET", new HashMap<>());
+        router.intercept(Uri.parse(HelioWebRouter.ORIGIN + "/api/summary?date=2026-03-09"), "GET", new HashMap<>());
+        router.handleBridgeMessage(actionMessage(3, "sync"), APP_ORIGIN, true);
+        final int calls = backend.calls.size();
+
+        final WebResourceResponse r = router.intercept(Uri.parse(HelioWebRouter.ORIGIN + HelioStartup.PATH), "GET",
+                new HashMap<>());
+        assertEquals(calls, backend.calls.size());  // Python never sees it
+        assertEquals(200, r.getStatusCode());
+        assertEquals("application/json", r.getMimeType());
+        final String body = bodyOf(r);
+        assertFalse(body, body.contains("2026"));  // paths without their query
+        final JSONObject tl = new JSONObject(body);
+        assertEquals(1, tl.getJSONArray("marks").length());
+        assertEquals(1000, tl.getJSONArray("marks").getJSONObject(0).getLong("start"));
+        final org.json.JSONArray api = tl.getJSONArray("api");
+        assertEquals(2, api.length());
+        assertEquals("/api/summary", api.getJSONObject(0).getString("path"));
+        assertEquals("/api/android/action", api.getJSONObject(1).getString("path"));
+        assertTrue(api.getJSONObject(0).getLong("start") <= api.getJSONObject(0).getLong("end"));
+        HelioStartup.clear();
+    }
+
+    @Test
+    public void startupTimelineIsBounded() throws Exception {
+        HelioStartup.clear();
+        for (int i = 0; i < 100; i++) {
+            HelioStartup.mark("android.step" + i, i, i + 1);
+            HelioStartup.api("/api/p" + i, i, i + 1);
+        }
+        HelioStartup.api("/api/../x y", 0, 1);
+        HelioStartup.api(HelioStartup.PATH, 0, 1);
+        final JSONObject tl = new JSONObject(HelioStartup.json());
+        assertEquals(HelioStartup.MAX_MARKS, tl.getJSONArray("marks").length());
+        assertEquals(HelioStartup.MAX_API, tl.getJSONArray("api").length());
+        HelioStartup.clear();
+    }
+
+    @Test
     public void apiPostCannotBeIntercepted() {
         final WebResourceResponse r = router.intercept(Uri.parse(HelioWebRouter.ORIGIN + "/api/weight"), "POST", null);
         assertEquals(405, r.getStatusCode());

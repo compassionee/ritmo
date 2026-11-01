@@ -275,8 +275,9 @@ def read_manifest(package):
         raise CatalogError("cat.e.manifest")
 
 
-def _unpack_db(package, manifest, dest):
-    """Decompresses the database into dest checking sizes and both hashes."""
+def _unpack_db(package, manifest, dest, progress=None):
+    """Decompresses the database into dest checking sizes and both hashes. progress(phase, done, total): optional,
+    called with the compressed bytes read."""
     try:
         with tarfile.open(package, "r:") as tar:
             info = _members(tar)["catalog.sqlite.xz"]
@@ -293,8 +294,12 @@ def _unpack_db(package, manifest, dest):
                         raise CatalogError("cat.e.size")
                     hd.update(data)
                     out.write(data)
+                read = 0
                 for block in iter(lambda: src.read(1 << 20), b""):
                     hx.update(block)
+                    read += len(block)
+                    if progress:
+                        progress("unpack", read, manifest["xz_size"])
                     if dec.eof:
                         raise CatalogError("cat.e.xz")
                     write(dec.decompress(block, max_length=1 << 22))
@@ -314,14 +319,19 @@ def _unpack_db(package, manifest, dest):
         raise CatalogError("cat.e.hash")
 
 
-def check_db(path, manifest, full=False):
+CHECK_STEPS = 4  # the steps check_db reports to progress
+
+
+def check_db(path, manifest, full=False, progress=None):
     """Structure, rows and values of a catalog database; raises CatalogError. The SHA-256 of the whole file
     is checked before: it is the database the builder made and checked with full=True (SQLite integrity and
     FTS5 index), so the phone does not repeat those long checks."""
     try:
         # the FTS5 integrity-check is an INSERT command: the full check (on the computer) opens the file writable
         mode = "rw" if full else "ro"
+        step = (lambda i: progress("check", i, CHECK_STEPS)) if progress else (lambda i: None)
         with closing(sqlite3.connect(f"file:{Path(path).as_posix()}?mode={mode}", uri=True)) as con:
+            step(0)
             if full and con.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                 raise CatalogError("cat.e.db")
             objects = {(t, n) for t, n in con.execute("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")}
@@ -336,21 +346,25 @@ def check_db(path, manifest, full=False):
             if con.execute("SELECT max(id) FROM food").fetchone()[0] != manifest["rows"] or \
                     con.execute("SELECT count(*) FROM food").fetchone()[0] != manifest["rows"]:
                 raise CatalogError("cat.e.rows")
+            step(1)
             try:  # FTS5 must be available here, and the index must answer
                 con.execute("SELECT rowid FROM food_fts WHERE food_fts MATCH 'a*' LIMIT 1").fetchall()
             except sqlite3.OperationalError:
                 raise CatalogError("cat.e.fts")
             if full:
                 con.execute("INSERT INTO food_fts(food_fts, rank) VALUES ('integrity-check', 0)")
+            step(2)
             srcs = ", ".join(f"'{s}'" for s in SOURCES[manifest["kind"]])
             nutrients = " OR ".join(
                 f"({k} IS NOT NULL AND (typeof({k}) NOT IN ('real', 'integer') OR {k} NOT BETWEEN 0 AND 100))"
                 for k in NUTRIENTS if k != "kcal")
             if con.execute(INVALID_SQL.format(srcs=srcs, nutrients=nutrients)).fetchone()[0]:
                 raise CatalogError("cat.e.values")
+            step(3)
             for (p,) in con.execute("SELECT portions FROM food WHERE portions IS NOT NULL"):
                 if parse_portions(p) is None:
                     raise CatalogError("cat.e.values")
+            step(CHECK_STEPS)
     except sqlite3.DatabaseError:
         raise CatalogError("cat.e.db")
 
@@ -391,8 +405,9 @@ def installed_path(catalog_dir, kind):
     return Path(catalog_dir) / f"{kind}.sqlite"
 
 
-def install(package, catalog_dir, state_dir, kinds=KINDS):
+def install(package, catalog_dir, state_dir, kinds=KINDS, progress=None):
     """Checks a package and installs it as the catalog of its kind. Returns the manifest.
+    progress(phase, done, total), optional: "unpack" (compressed bytes read), then "check" (steps).
 
     Only files in catalog_dir are created or replaced; state_dir is only used to refuse a catalog folder
     inside the user's data (or the other way round)."""
@@ -403,8 +418,8 @@ def install(package, catalog_dir, state_dir, kinds=KINDS):
     cdir.mkdir(parents=True, exist_ok=True)
     tmp = cdir / f".install-{secrets.token_hex(6)}.sqlite"
     try:
-        _unpack_db(package, manifest, tmp)
-        check_db(tmp, manifest)
+        _unpack_db(package, manifest, tmp, progress)
+        check_db(tmp, manifest, progress=progress)
         installed = cdir / f".installed-{secrets.token_hex(6)}.json"
         installed.write_text(json.dumps(manifest, sort_keys=True))
         # the database stays exactly as built (its hash is the manifest's); the manifest goes next to it

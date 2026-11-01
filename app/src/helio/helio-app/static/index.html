@@ -457,6 +457,10 @@
     <ul class="about-list" id="aboutData"></ul>
     <h4 class="sub" data-i18n="about.software"></h4>
     <ul class="about-list" id="aboutSoft"></ul>
+    <details class="more" id="bootBox" data-more="about_boot"><summary data-i18n="boot.title"></summary>
+      <p class="note" data-i18n="boot.note"></p>
+      <ol class="boot-list" id="bootList"></ol>
+      <button class="w-btn ghost" id="bootCopy" data-i18n="boot.copy"></button></details>
   </div>
 </div>
 
@@ -665,6 +669,7 @@
 </nav>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<div id="taskBar" class="task-bar" role="status" aria-live="polite" hidden><span id="taskText"></span><progress id="taskProg" max="100"></progress></div>
 <script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>

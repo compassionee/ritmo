@@ -20,6 +20,7 @@ import json
 import os
 import sqlite3
 import sys
+import threading
 import time
 import xml.etree.ElementTree as ET
 
@@ -57,6 +58,14 @@ _band_state_path = None
 _last_sync_request = None
 _wall = time.time
 _monotonic = time.monotonic
+# One API request at a time: the WebView sends the page's requests together from several threads, and in one Python
+# they slow each other down (measured: the startup answers take 2-2.5 times longer in parallel than in a row, every
+# day still computed once). In a row, the total is the same as one after the other and the first answers come sooner.
+_handler_lock = threading.Lock()
+# Long answers run outside the queue, so that the page keeps getting its other answers meanwhile: a CSV of a long
+# period, the catalog speed test. (The data export and import and the catalog package import do not go through
+# handle(): the app runs them on a thread of their own.)
+LONG_PATHS = ("/api/export.csv", "/api/catalog/bench")
 
 
 def find_device(db):
@@ -85,21 +94,26 @@ def find_device_id(db):
 
 
 def configure(db, state_dir, plan, tz, profile=None, profile_path=None, band_state_path=None, catalog_dir=None,
-              catalog_bundled=None):
+              catalog_bundled=None, app_version=None):
     """Prepares the environment and loads helio_app. Call it once, before handle().
 
     The profile (measurements and goals) comes as a dictionary or from the JSON file profile_path.
     band_state_path: the preferences (XML) where Gadgetbridge writes the band status.
     catalog_dir: folder of the food catalog (next to state_dir, never inside); catalog_bundled: the catalog
     package shipped in the APK, copied out of the assets by the app.
+    app_version: the APK's versionCode and install time; the disk cache of past days never uses the results of
+    another installation (without it: a digest of the code).
     """
     global _app, _zone, _band_address, _band_state_path, _last_sync_request
+    started = _wall()
     if profile is None and profile_path:
         profile = helio_transfer.load_profile(profile_path)
     for k in helio_transfer.PROFILE_KEYS:
         os.environ.pop(k, None)
-    for k in SERVER_ONLY_ENV + ("HELIO_CATALOG", "HELIO_CATALOG_BUNDLED"):
+    for k in SERVER_ONLY_ENV + ("HELIO_CATALOG", "HELIO_CATALOG_BUNDLED", "HELIO_APP_VERSION"):
         os.environ.pop(k, None)
+    if app_version:
+        os.environ["HELIO_APP_VERSION"] = str(app_version)
     if catalog_dir:
         os.environ["HELIO_CATALOG"] = catalog_dir
     if catalog_bundled:
@@ -112,7 +126,9 @@ def configure(db, state_dir, plan, tz, profile=None, profile_path=None, band_sta
         "HELIO_PLAN": plan or "",  # no default plan: the user's plan lives in the data folder
         "HELIO_TZ": tz,
     })
+    t = _wall()
     device_id, _band_address = find_device(db)
+    found = _wall()
     os.environ["HELIO_DEVICE_ID"] = str(device_id)
     _band_state_path = band_state_path
     _last_sync_request = None
@@ -121,6 +137,9 @@ def configure(db, state_dir, plan, tz, profile=None, profile_path=None, band_sta
     else:
         import helio_app
         _app = helio_app
+    # startup timeline: helio_app adds its own import and migration
+    _app.startup_mark("py.environment", started, t)
+    _app.startup_mark("py.find_device", t, found)
     _zone = tz
     return _app
 
@@ -223,7 +242,11 @@ def handle(method, path, headers=None, body=b""):
     raw = ("\r\n".join(lines) + "\r\n\r\n").encode("ascii") + (body if method == "POST" else b"")
 
     conn = _Connection(raw)
-    _app.Handler(conn, ("127.0.0.1", 0), _Server())
+    if path.split("?", 1)[0] in LONG_PATHS:
+        _app.Handler(conn, ("127.0.0.1", 0), _Server())
+    else:
+        with _handler_lock:
+            _app.Handler(conn, ("127.0.0.1", 0), _Server())
     return _parse(bytes(conn.sent))
 
 
@@ -263,13 +286,15 @@ def import_state(data, state_dir, profile_path, lang="en"):
     return json.dumps({"files": n, "profile": sorted(profile), "backup": backup is not None})
 
 
-def catalog_import(path, lang="en"):
+def catalog_import(path, lang="en", progress=None):
     """Installs a food catalog package chosen by the user (copied by the app into a temporary file).
 
     Returns a JSON summary. An invalid package raises ImportFailed (reason in the language lang) and leaves
-    the installed catalog and the user's data as they are."""
+    the installed catalog and the user's data as they are. progress: an object with report(phase, done, total)
+    (HelioProgress in the app), told how the unpacking and the checks go."""
+    report = (lambda phase, done, total: progress.report(phase, int(done), int(total))) if progress is not None else None
     try:
-        res = _app.catalog_install(path)
+        res = _app.catalog_install(path, report)
     except _app.UserError as e:
         lang = lang if lang in ("it", "en") else "en"
         raise ImportFailed(_app.tr(lang, e.msg["$"], **{k: v for k, v in e.msg.items() if k != "$"})) from None

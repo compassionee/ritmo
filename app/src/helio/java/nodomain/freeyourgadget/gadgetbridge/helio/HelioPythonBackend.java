@@ -27,6 +27,8 @@ import com.chaquo.python.android.AndroidPlatform;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -38,12 +40,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 
+import nodomain.freeyourgadget.gadgetbridge.BuildConfig;
 import nodomain.freeyourgadget.gadgetbridge.GBDatabase;
 
 /**
  * Runs Helio in Python (Chaquopy), in the :helio process. Python is started on the first request.
  */
 public class HelioPythonBackend implements HelioBackend {
+    private static final Logger LOG = LoggerFactory.getLogger(HelioPythonBackend.class);
     private final Context context;
     private PyObject bridge;
 
@@ -106,20 +110,52 @@ public class HelioPythonBackend implements HelioBackend {
         tmp.renameTo(dest);
     }
 
+    /**
+     * versionCode and install time: every installation, also of the same version, has its own disk cache of past
+     * days (Python never uses results computed by other code).
+     */
+    @NonNull
+    static String appVersion(@NonNull final Context context) {
+        long installed = 0;
+        try {
+            installed = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).lastUpdateTime;
+        } catch (final Exception ignored) {
+            // unknown: the versionCode alone
+        }
+        return BuildConfig.VERSION_CODE + "-" + installed;
+    }
+
     /** Helio profile (measures and goals), as imported from the server. */
     @NonNull
     public static File profileFile(@NonNull final Context context) {
         return new File(context.getFilesDir(), "helio-config.json");
     }
 
+    /**
+     * Starts Python and loads Helio ahead of the first request, while the WebView is being created: the first request
+     * then waits only for what is left. A failure here is reported again by that request.
+     */
+    public void prewarm() {
+        try {
+            bridge();
+        } catch (final RuntimeException e) {
+            LOG.error("Helio could not start Python ahead of the page", e);
+        }
+    }
+
     @NonNull
     private synchronized PyObject bridge() {
         if (bridge == null) {
+            // startup timeline: Python, the catalog copy, the import of helio_android and helio_app
+            long t = HelioStartup.now();
             if (!Python.isStarted()) {
                 Python.start(new AndroidPlatform(context));
             }
+            HelioStartup.mark("android.python", t, t = HelioStartup.now());
             copyBundledCatalog(context);
+            HelioStartup.mark("android.catalog_copy", t, t = HelioStartup.now());
             final PyObject module = Python.getInstance().getModule("helio_android");
+            HelioStartup.mark("android.bridge_import", t, t = HelioStartup.now());
             module.callAttr("configure",
                     context.getDatabasePath(GBDatabase.DATABASE_NAME).getAbsolutePath(),
                     stateDir(context).getAbsolutePath(),
@@ -128,7 +164,9 @@ public class HelioPythonBackend implements HelioBackend {
                     new Kwarg("profile_path", profileFile(context).getAbsolutePath()),
                     new Kwarg("band_state_path", HelioBandState.file(context).getAbsolutePath()),
                     new Kwarg("catalog_dir", catalogDir(context).getAbsolutePath()),
-                    new Kwarg("catalog_bundled", bundledCatalog(context).getAbsolutePath()));
+                    new Kwarg("catalog_bundled", bundledCatalog(context).getAbsolutePath()),
+                    new Kwarg("app_version", appVersion(context)));
+            HelioStartup.mark("android.configure", t, HelioStartup.now());
             bridge = module;
         }
         return bridge;
@@ -163,9 +201,9 @@ public class HelioPythonBackend implements HelioBackend {
      * @throws com.chaquo.python.PyException if the package is not valid (the installed catalog stays)
      */
     @NonNull
-    public String importCatalog(@NonNull final File packageFile) {
+    public String importCatalog(@NonNull final File packageFile, @NonNull final HelioProgress progress) {
         return bridge().callAttr("catalog_import", packageFile.getAbsolutePath(),
-                java.util.Locale.getDefault().getLanguage()).toString();
+                java.util.Locale.getDefault().getLanguage(), progress).toString();
     }
 
     @NonNull

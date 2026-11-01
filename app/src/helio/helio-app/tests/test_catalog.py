@@ -234,6 +234,18 @@ class Package(unittest.TestCase):
         self.assertGreater(got["file_size"], 0)
         self.assertEqual(hc.info(self.tmp / "nothing"), {})
 
+    def test_install_reports_progress(self):
+        """For the app's progress bar: the compressed bytes read up to the whole, then the check's steps in order."""
+        events = []
+        m = hc.install(self.pkg, self.cat, self.state, progress=lambda *e: events.append(e))
+        unpack = [e for e in events if e[0] == "unpack"]
+        self.assertTrue(unpack)
+        self.assertEqual(unpack[-1], ("unpack", m["xz_size"], m["xz_size"]))
+        self.assertEqual([d for d, _ in [(e[1], e[2]) for e in unpack]], sorted(e[1] for e in unpack))
+        self.assertEqual([e for e in events if e[0] == "check"],
+                         [("check", i, hc.CHECK_STEPS) for i in range(hc.CHECK_STEPS + 1)])
+        self.assertEqual(events.index(unpack[-1]) + 1, events.index(("check", 0, hc.CHECK_STEPS)))
+
     def assert_rejected(self, pkg, key):
         hc.install(self.pkg, self.cat, self.state)
         before = (self.cat / "generic.sqlite").read_bytes()

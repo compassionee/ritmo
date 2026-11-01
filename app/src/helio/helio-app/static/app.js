@@ -2304,6 +2304,7 @@ let loadSeq = 0;
 async function load() {
   // quick taps on the arrows or a save during a load: only the latest answer counts
   const seq = ++loadSeq;
+  const asked = performance.now();
   viewSave();
   $("dayLabel").textContent = dayLabel(current);
   $("next").disabled = current >= today();
@@ -2316,11 +2317,13 @@ async function load() {
       soft(getJson(`/api/nutrition?date=${current}`)), soft(getJson("/api/foods")),
       soft(getJson(cumUrl()))]);
     if (seq !== loadSeq) return;
+    const got = performance.now();
     [S, T, V, WEEK, STRW, PLAN, WEIGHT, NUT, FOODS, CUM] = res;
     if (S.tz) { TZ = S.tz; I18N.setTimeZone(TZ); }
     $("error").hidden = true;
     loadError = null;
     renderAll();
+    if (!bootDone) bootFirstDrawing(asked, got);
   } catch (e) {
     if (seq !== loadSeq) return;
     loadError = e.message;
@@ -2386,6 +2389,20 @@ window.helioCatalogImported = (r) => {
   loadCatalog();
 };
 let removeArmed = false;
+// a long operation of the app (HelioTaskReporter): {task, phase, percent?, end, ok}. The page stays usable meanwhile:
+// those operations never hold up its requests
+const TASKS = ["catalog_import", "export", "import", "csv"];
+const TASK_PHASES = ["start", "copy", "unpack", "check", "run"];
+window.helioTask = (e) => {
+  if (!e || !TASKS.includes(e.task) || !TASK_PHASES.includes(e.phase)) return;
+  const bar = $("taskBar"), prog = $("taskProg");
+  if (e.end) { bar.hidden = true; return; }
+  const pct = Number.isFinite(e.percent) ? Math.max(0, Math.min(100, e.percent)) : null;
+  $("taskText").textContent = [t(`task.${e.task}`), t(`task.phase.${e.phase}`), pct != null ? t("task.percent", { v: pct }) : ""]
+    .filter(Boolean).join(" · ");
+  if (pct != null) prog.value = pct; else prog.removeAttribute("value");  // without a value: indeterminate
+  bar.hidden = false;
+};
 $("catalogImport").addEventListener("click", async () => {
   try {
     await postJson("/api/android/action", { action: "catalog_import" });
@@ -2457,6 +2474,86 @@ function renderAbout() {
 }
 $("aboutOpen").addEventListener("click", openAbout);
 $("catalogAbout").addEventListener("click", openAbout);
+
+/* ================= startup times (Profile > About) ================= */
+// The page's steps of this opening, on the wall clock like the Java side (/api/android/startup, only in the app) and
+// Python (/api/startup): the three sides go on one line from the start of the process (or of the page, on the server).
+// Only in memory; nothing leaves the device and there are no data, only steps and API paths.
+const BOOT = [];
+let bootDone = false;
+let bootText = "";
+function bootMark(key, start, end = performance.now()) {
+  BOOT.push({ key, start: performance.timeOrigin + start, end: performance.timeOrigin + end });
+}
+function bootFirstDrawing(asked, got) {
+  bootDone = true;
+  bootMark("page.data", asked, got);
+  bootMark("page.render", got);
+  // after the frame that shows it
+  requestAnimationFrame(() => setTimeout(() => {
+    bootMark("page.paint", got);
+    const nav = performance.getEntriesByType("navigation")[0];
+    if (nav && nav.responseEnd > 0) bootMark("page.html", 0, nav.responseEnd);
+    if (nav && nav.domContentLoadedEventEnd > 0) bootMark("page.dom", nav.responseEnd, nav.domContentLoadedEventEnd);
+    const fcp = performance.getEntriesByType("paint").find((p) => p.name === "first-contentful-paint");
+    if (fcp) bootMark("page.fcp", fcp.startTime, fcp.startTime);
+  }, 0));
+}
+// one row per step and per API path; an API row is the first answer as the WebView saw it (waiting included) with
+// Python's own share
+function bootRows(java, py) {
+  const rows = [...(java ? java.marks : []).map((m) => ({ ...m })),
+    ...(py ? py.marks : []).map((m) => ({ key: m.key, start: m.start * 1000, end: m.end * 1000 })), ...BOOT];
+  const pyApi = new Map((py ? py.api : []).map((a) => [a.path, a]));
+  for (const a of java ? java.api : []) {
+    const p = pyApi.get(a.path);
+    pyApi.delete(a.path);
+    rows.push({ path: a.path, start: a.start, end: a.end, py: p ? (p.end - p.start) * 1000 : null });
+  }
+  for (const p of pyApi.values()) rows.push({ path: p.path, start: p.start * 1000, end: p.end * 1000, py: null });
+  const zero = java && java.marks.length ? Math.min(...java.marks.map((m) => m.start)) : performance.timeOrigin;
+  // on the server Python started long before this page: only what happened for this opening
+  return { zero, rows: rows.filter((r) => r.start >= zero - 1).sort((a, b) => a.start - b.start || a.end - b.end) };
+}
+async function renderBoot() {
+  const box = $("bootList"); box.replaceChildren();
+  let java = null, py = null;
+  try { py = await getJson("/api/startup"); } catch (e) { py = null; }
+  if (ANDROID) { try { java = await getJson("/api/android/startup"); } catch (e) { java = null; } }
+  const { zero, rows } = bootRows(java, py);
+  const lines = [t("boot.title")];
+  for (const r of rows) {
+    const at = t("boot.at", { v: r.start - zero }), dur = t("boot.ms", { v: r.end - r.start });
+    const label = r.path ? t("boot.api", { path: r.path }) : t(`boot.k.${r.key.replace(/\./g, "_")}`);
+    const share = r.py != null ? t("boot.api_py", { v: r.py }) : "";
+    const li = h("li", null, null, box);
+    h("span", "boot-at", at, li);
+    const what = h("span", "boot-what", label, li);
+    if (share) h("small", null, share, what);
+    h("span", "boot-dur", dur, li);
+    lines.push([at, dur, label, share].filter(Boolean).join(" · "));
+  }
+  const end = rows.length ? Math.max(...rows.map((r) => r.end)) : zero;
+  h("li", "boot-total", t("boot.total", { v: end - zero }), box);
+  lines.push(t("boot.total", { v: end - zero }));
+  bootText = lines.join("\n");
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* the WebView may refuse it: below */ }
+  const area = h("textarea", "copy-area", null, document.body);
+  area.value = text;
+  area.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  area.remove();
+  return ok;
+}
+$("bootBox").addEventListener("toggle", () => { if ($("bootBox").open) renderBoot(); });
+$("bootCopy").addEventListener("click", async () => {
+  if (!bootText) await renderBoot();
+  const ok = await copyText(bootText);
+  toast(t(ok ? "boot.copied" : "boot.copy_failed"), !ok);
+});
 
 /* ================= language ================= */
 // choice saved in the app's data (settings.json, included in the export); empty = system language
@@ -2676,8 +2773,10 @@ if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWor
 
 async function start() {
   let saved = null;
+  const t0 = performance.now();
   try { SETTINGS = await getJson("/api/settings"); saved = SETTINGS.lang || null; } catch (e) { saved = null; }
   try { await I18N.set(saved); } catch (e) { await I18N.set("en").catch(() => {}); }
+  bootMark("page.settings", t0);
   const restoreY = ANDROID ? viewInstall() : null;
   await load();
   if (restoreY) requestAnimationFrame(() => window.scrollTo({ top: restoreY }));
