@@ -283,7 +283,6 @@ class NutritionContract(unittest.TestCase):
     def test_catalog(self):
         self.assert_fields(js_function("drawCatResults"), "it", self.cat_item)
         self.assert_fields(js_function("drawCatResults"), "r", {**self.cat_search, **self.cat_barcode})
-        self.assert_fields(js_function("lookupScanned"), "r", self.cat_barcode)
         self.assert_fields(js_function("openEntry"), "cat", self.cat_item)
         self.assert_fields(js_function("openFoodEditor"), "cat", self.cat_item)
         self.assert_fields(js_function("catDisplayName"), "it", self.cat_item)
@@ -296,11 +295,15 @@ class NutritionContract(unittest.TestCase):
         self.assertEqual(entry["src"]["src"], self.cat_item["src"])
 
     def test_foods(self):
-        for name in ("renderFoodsList", "drawPick"):
+        for name in ("renderFoodsList", "pickFoodRow", "pickMealRow"):
             body = js_function(name)
-            self.assert_fields(body, "f", {**self.food_, **self.recipe})
-            self.assert_fields(body, "m", self.f["meals"][0])
-            self.assert_fields(body, "i", self.f["meals"][0]["items"][0])
+            if name != "pickMealRow":
+                self.assert_fields(body, "f", {**self.food_, **self.recipe})
+            if name != "pickFoodRow":
+                self.assert_fields(body, "m", self.f["meals"][0])
+                self.assert_fields(body, "i", self.f["meals"][0]["items"][0])
+        self.assert_fields(js_function("drawPick"), "r", {"kind": "food", "id": "f1"})  # an entry of Recent
+        self.assert_fields(js_function("drawPick"), "FOODS", self.f)
         self.assert_fields(js_function("renderFoodsList"), "F", self.f)
         self.assert_fields(js_function("openFoodEditor"), "food", self.food_)
         self.assert_fields(js_function("openRecipeEditor"), "rec", self.recipe)

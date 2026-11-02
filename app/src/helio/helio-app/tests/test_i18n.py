@@ -195,7 +195,6 @@ NEVER_ONE = {
     "prof.short": {"age"}, "prof.summary": {"age", "steps"},       # step goal at least 1,000
     "ins.steps_goal.text": {"steps", "goal"}, "ins.val.steps": {"v"},  # shown only with the step goal reached
     "ins.who_week.text": {"min"},                                  # shown only above the weekly goal (at least 30)
-    "cat.scan_choose": {"n"},                                      # shown only with more than one product
     "e.entries_max": {"max"}, "e.export_days": {"max"}, "e.foods_max": {"max"}, "e.items_count": {"max"},
     "e.meals_max": {"max"}, "e.plan_text_long": {"max"}, "e.portions_max": {"max"}, "e.sets_max": {"max"},
     "e.text_len": {"max"}, "err.name_invalid": {"max"},
@@ -513,21 +512,29 @@ class LanguageSwitch(unittest.TestCase):
             db = Path(tmp) / "gb.db"
             build_db(db)
             h = load_app(db, HELIO_STATE=str(Path(tmp) / "state"))
-            self.assertEqual(h.settings_load(), {"lang": None, "hints": []})  # default: the system language
+            self.assertEqual(h.settings_load(), {"lang": None, "hints": [], "save_mine": False})  # default: system language
             h.save_settings({"lang": "en"})
-            self.assertEqual(h.settings_load(), {"lang": "en", "hints": []})
+            self.assertEqual(h.settings_load(), {"lang": "en", "hints": [], "save_mine": False})
             with self.assertRaises(h.UserError):
                 h.save_settings({"lang": "fr"})
             # a usage hint once used: only that field changes, the language stays
             h.save_settings({"hint": "day_complete"})
             h.save_settings({"hint": "day_complete"})
-            self.assertEqual(h.settings_load(), {"lang": "en", "hints": ["day_complete"]})
-            for bad in ({"hint": "other"}, {}):
+            self.assertEqual(h.settings_load(), {"lang": "en", "hints": ["day_complete"], "save_mine": False})
+            # "Save also to my foods" remembered: only that field changes
+            h.save_settings({"save_mine": True})
+            self.assertEqual(h.settings_load(), {"lang": "en", "hints": ["day_complete"], "save_mine": True})
+            for bad in ({"hint": "other"}, {}, {"save_mine": "yes"}, {"save_mine": None}):
                 with self.assertRaises(h.UserError):
                     h.save_settings(bad)
             archive = helio_transfer.export_bytes(str(Path(tmp) / "state"))
             _, files = helio_transfer.read_archive(archive)
-            self.assertEqual(json.loads(files["settings.json"]), {"lang": "en", "hints": ["day_complete"]})
+            self.assertEqual(json.loads(files["settings.json"]), {"lang": "en", "hints": ["day_complete"], "save_mine": True})
+            # and back with the import, into another phone
+            other = Path(tmp) / "other"
+            helio_transfer.import_bytes(archive, str(other))
+            h2 = load_app(db, HELIO_STATE=str(other))
+            self.assertTrue(h2.settings_load()["save_mine"])
 
     def test_csv_follows_the_language(self):
         with tempfile.TemporaryDirectory() as tmp:

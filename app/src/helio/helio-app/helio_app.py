@@ -3652,8 +3652,8 @@ def foods_load():
                     rec["per100"] = clean_per100(f.get("per100"), fiber_optional=bool(origin) and "fiber" not in origin["v"])
                     if origin:
                         rec["origin"] = origin
-                    if hc.clean_barcode(f.get("barcode")):
-                        rec["barcode"] = hc.clean_barcode(f.get("barcode"))
+                    if hc.barcode_digits(f.get("barcode")):  # stored codes are kept even with a wrong check digit
+                        rec["barcode"] = hc.barcode_digits(f.get("barcode"))
                 else:
                     rec["items"] = clean_items([i for i in f.get("items") or [] if isinstance(i, list) and i and i[0] in foods],
                                                foods, False)
@@ -3781,11 +3781,17 @@ def save_food(body):
             rec["per100"] = clean_per100(raw.get("per100"), fiber_optional=bool(origin) and "fiber" not in origin["v"])
             if origin:
                 rec["origin"] = origin
-            barcode = raw.get("barcode") if "barcode" in raw else (foods[fid].get("barcode") if fid else None)
-            if barcode not in (None, ""):
-                if not hc.clean_barcode(barcode):
-                    raise UserError("e.barcode_invalid")
-                rec["barcode"] = hc.clean_barcode(barcode)
+            if "barcode" in raw:
+                barcode = raw.get("barcode")
+                if barcode not in (None, ""):
+                    # a new copy of a community food keeps the catalog's code as it is; a code from the user is checked
+                    copied = hc.barcode_digits(barcode) if origin and not fid else None
+                    rec["barcode"] = copied or checked_barcode(barcode)
+            elif fid and foods[fid].get("barcode"):
+                rec["barcode"] = foods[fid]["barcode"]  # unchanged: kept as it was stored
+            same = mine_by_code(foods, rec.get("barcode"), skip=fid)
+            if same:  # one food per product code, in any of its forms (EAN-8, UPC-A, EAN-13, GTIN-14)
+                raise UserError("e.barcode_exists", name=foods[same]["name"])
         else:
             rec["items"] = clean_items(raw.get("items"), foods, False)
             cooked = raw.get("cooked_g")
@@ -3868,6 +3874,10 @@ def meal_catalog_items(raw, foods, save, lang=None):
     if not items:
         return raw
     copies = {(f["origin"]["src"], f["origin"]["ref"]): k for k, f in foods.items() if f.get("origin")}
+    for key, it in items.items():  # a food of the user with the same product code is that product
+        same = mine_by_code(foods, it.get("barcode"))
+        if key not in copies and same:
+            copies[key] = same
     new = [it for key, it in items.items() if key not in copies]
     if new and not save:
         raise UserError("e.meal_catalog_unsaved", names=sorted(catalog_copy_name(it) for it in new))
@@ -3884,11 +3894,52 @@ def meal_catalog_items(raw, foods, save, lang=None):
             rec["portions"] = clean_portions(it.get("portions"))
         except (ValueError, TypeError):
             pass
-        if hc.clean_barcode(it.get("barcode")):
-            rec["barcode"] = hc.clean_barcode(it["barcode"])
+        if hc.barcode_digits(it.get("barcode")):  # catalog data, kept as the source has it
+            rec["barcode"] = hc.barcode_digits(it["barcode"])
         foods[rec["id"]] = rec
         copies[(it["src"], it["ref"])] = rec["id"]
     return [[copies[k], it[1]] if k else it for k, it in zip(keys, raw)]
+
+
+def mine_by_code(foods, code_, skip=None):
+    """Id of the user's food with this product code in any of its forms (gtin_key), None if there is none."""
+    key = hc.gtin_key(code_)
+    if not key:
+        return None
+    return next((k for k, f in foods.items() if k != skip and f["kind"] == "food" and hc.gtin_key(f.get("barcode")) == key), None)
+
+
+def catalog_to_mine(item, foods):
+    """The user's food for a community product ("Save also to my foods" when adding it): the food with the same
+    product code or the copy already made of it, otherwise a new copy as "Save to my foods" makes it (origin,
+    code, portions; a free name if the user already has one with that name). Call it with the lock held; returns
+    the id."""
+    same = mine_by_code(foods, item.get("barcode"))
+    if same:
+        return same
+    for k, f in foods.items():
+        if f.get("origin") and (f["origin"]["src"], f["origin"]["ref"]) == (item["src"], item["ref"]):
+            return k
+    if len(foods) >= FOODS_MAX:
+        raise UserError("e.foods_max", max=FOODS_MAX)
+    base = catalog_copy_name(item)
+    names = {f["name"].lower() for f in foods.values()}
+    name, n = base, 2
+    while name.lower() in names:
+        suffix = f" ({n})"
+        name, n = base[:60 - len(suffix)] + suffix, n + 1
+    rec = {"id": new_id("f"), "kind": "food", "name": name, "portions": [], "updated": int(time.time()),
+           "origin": {"src": item["src"], "ref": item["ref"], "version": item["version"] or "", "v": dict(item["per100"])},
+           "per100": clean_per100(item["per100"], fiber_optional=item["per100"].get("fiber") is None)}
+    try:
+        rec["portions"] = clean_portions(item.get("portions"))
+    except (ValueError, TypeError):
+        pass
+    if hc.barcode_digits(item.get("barcode")):
+        rec["barcode"] = hc.barcode_digits(item["barcode"])
+    foods_add(rec)
+    foods[rec["id"]] = rec
+    return rec["id"]
 
 
 def catalog_copy_name(item):
@@ -3969,9 +4020,12 @@ def diary_op(body):
                     raise UserError("e.food_not_found")
                 if len(entries) + 1 > DAY_ENTRIES_MAX:
                     raise UserError("e.entries_max", max=DAY_ENTRIES_MAX)
-                entries.append({"id": new_id("e"), "meal": meal, "g": check_num(body.get("g"), 0.1, 5000, M("f.grams")),
-                                **catalog_snapshot(item), "added": int(time.time())})
-                items = []
+                g = check_num(body.get("g"), 0.1, 5000, M("f.grams"))
+                if body.get("save") is True:  # "Save also to my foods": the entry is of the user's food
+                    items = [(foods[catalog_to_mine(item, foods)], g)]
+                else:
+                    entries.append({"id": new_id("e"), "meal": meal, "g": g, **catalog_snapshot(item), "added": int(time.time())})
+                    items = []
             elif op == "add":
                 f = foods.get(body.get("food")) if isinstance(body.get("food"), str) else None
                 if not f:
@@ -3984,8 +4038,10 @@ def diary_op(body):
                 items = [(foods[fid], g) for fid, g in m["items"]]
             if len(entries) + len(items) > DAY_ENTRIES_MAX:
                 raise UserError("e.entries_max", max=DAY_ENTRIES_MAX)
+            # tpl: the saved meal the entries come from (Recent in the Add panel)
+            tpl = {"tpl": body["template"]} if op == "add_meal" else {}
             for f, g in items:
-                entries.append({"id": new_id("e"), "meal": meal, "g": g, **snapshot(f, foods), "added": int(time.time())})
+                entries.append({"id": new_id("e"), "meal": meal, "g": g, **snapshot(f, foods), **tpl, "added": int(time.time())})
         elif op == "update":
             e = next((x for x in entries if x["id"] == body.get("id")), None)
             if not e:
@@ -4092,6 +4148,46 @@ def save_goal(body):
     return {"ok": True}
 
 
+RECENT_MAX = 10
+USAGE_MONTHS = 13  # diary months read for Recent and the order by use
+
+
+def food_usage(foods, meals):
+    """From the diary of the last USAGE_MONTHS months: the last RECENT_MAX foods, recipes or saved meals used
+    ([{"kind": "food" | "meal", "id"}], latest first) and how many times each was used ({id: n}; a saved meal
+    counts once per time it was added). Only what still exists."""
+    names = sorted((x for x in (STATE_DIR.glob("diary-*.json") if STATE_DIR.is_dir() else []) if DIARY_FILE.match(x.name)),
+                   key=lambda x: x.name, reverse=True)[:USAGE_MONTHS]
+    seen, uses = [], {}
+    for path in names:
+        for day, rec in state_load(path.name).items():
+            if not (isinstance(rec, dict) and isinstance(day, str) and DATE_RE.match(day)):
+                continue
+            added_meals = set()
+            for e in rec.get("entries") or []:
+                if not entry_ok(e):
+                    continue
+                added = e.get("added") if isinstance(e.get("added"), int) else 0
+                if isinstance(e.get("tpl"), str) and e["tpl"] in meals:
+                    if (e["tpl"], added) in added_meals:
+                        continue
+                    added_meals.add((e["tpl"], added))
+                    item = ("meal", e["tpl"])
+                elif isinstance(e.get("food"), str) and e["food"] in foods:
+                    item = ("food", e["food"])
+                else:
+                    continue
+                uses[item[1]] = uses.get(item[1], 0) + 1
+                seen.append((added, day, len(seen), item))  # in the same second: the later in the day's list
+    recent = []
+    for *_, item in sorted(seen, key=lambda x: x[:3], reverse=True):
+        if item not in recent:
+            recent.append(item)
+        if len(recent) == RECENT_MAX:
+            break
+    return [{"kind": k, "id": i} for k, i in recent], uses
+
+
 def foods_payload():
     foods, meals = foods_load()
     used = {}
@@ -4123,7 +4219,8 @@ def foods_payload():
         kcal = sum(food_values(foods[i], foods)[0]["kcal"] * g / 100 for i, g in m["items"])
         meal_list.append({"id": m["id"], "name": m["name"], "meal": m["meal"], "kcal": round(kcal),
                           "items": [{"food": i, "name": foods[i]["name"], "kind": foods[i]["kind"], "g": g} for i, g in m["items"]]})
-    return {"foods": out, "meals": meal_list, "goal": nutrition_settings()["goal"],
+    recent, uses = food_usage(foods, meals)
+    return {"foods": out, "meals": meal_list, "recent": recent, "uses": uses, "goal": nutrition_settings()["goal"],
             "goals": [{"key": k, "name": M(f"goal.{k}")} for k in GOALS],
             "meal_names": [{"key": k, "name": M(f"meal.{k}")} for k in MEALS],
             "factors": sci.ATWATER, "sources": src("eu_kcal", "eu_tol")}
@@ -4238,12 +4335,21 @@ def catalog_search(q, lang=None, limit=30):
             "community": [catalog_item(it) for it in hc.search(CATALOG_DIR, q, lang, limit)]}
 
 
+def checked_barcode(code_):
+    """Digits of a barcode from the user (typed or scanned) or UserError: e.barcode_invalid if it is not 8 to 14
+    digits, e.barcode_check if the GS1 check digit does not match (one digit read or typed wrong)."""
+    problem = hc.barcode_problem(code_)
+    if problem == "check":
+        raise UserError("e.barcode_check", code=hc.barcode_digits(code_))
+    if problem:
+        raise UserError("e.barcode_invalid")
+    return hc.clean_barcode(code_)
+
+
 def catalog_barcode(code_, lang=None):
     """Barcode: the user's foods with that code first, then the community products."""
     catalog_ready()
-    key = hc.gtin_key(code_)
-    if not key:
-        raise UserError("e.barcode_invalid")
+    key = hc.gtin_key(checked_barcode(code_))
     foods, _ = foods_load()
     mine = [mine_item("food", f, foods) for f in foods.values() if hc.gtin_key(f.get("barcode")) == key]
     return {"code": hc.gtin_display(key), "mine": mine,
@@ -5016,15 +5122,20 @@ HINTS = ("day_complete",)  # usage hints shown only until first used, then an (i
 
 def settings_load():
     """Interface settings (data folder, included in export and import).
-    lang: "it", "en" or None = system language; hints: usage hints already used (shown as an icon from then on)."""
+    lang: "it", "en" or None = system language; hints: usage hints already used (shown as an icon from then on);
+    save_mine: "Save also to my foods" ticked."""
     s = state_load("settings.json")
     hints = s.get("hints") if isinstance(s.get("hints"), list) else []
-    return {"lang": s.get("lang") if s.get("lang") in LANGS else None, "hints": [x for x in HINTS if x in hints]}
+    return {"lang": s.get("lang") if s.get("lang") in LANGS else None, "hints": [x for x in HINTS if x in hints],
+            "save_mine": s.get("save_mine") is True}
 
 
 def save_settings(body):
-    """Only the fields sent change: "lang" (None = system language), "hint" (a usage hint now used)."""
-    if "lang" not in body and "hint" not in body:
+    """Only the fields sent change: "lang" (None = system language), "hint" (a usage hint now used), "save_mine"
+    (the box "Save also to my foods" of the community products, remembered)."""
+    if "lang" not in body and "hint" not in body and "save_mine" not in body:
+        raise UserError("e.value_invalid")
+    if "save_mine" in body and not isinstance(body["save_mine"], bool):
         raise UserError("e.value_invalid")
     lang = body.get("lang")
     if "lang" in body and lang is not None and lang not in LANGS:
@@ -5037,6 +5148,8 @@ def save_settings(body):
             s["lang"] = lang
         if "hint" in body:
             s["hints"] = [x for x in HINTS if x in (settings_load()["hints"] + [body["hint"]])]
+        if "save_mine" in body:
+            s["save_mine"] = body["save_mine"]
         state_save("settings.json", s)
     return {"ok": True, **settings_load()}
 

@@ -1,4 +1,7 @@
 "use strict";
+// startup times (Profile > About): the start of this script; BOOT is declared further down, so the first marks are
+// kept here and added just before start()
+const BOOT_JS_START = performance.now();
 
 /* ================= utilities ================= */
 const $ = (id) => document.getElementById(id);
@@ -8,7 +11,10 @@ function isoLocal(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pa
 function parseIso(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
 function addDays(s, n) { const d = parseIso(s); d.setDate(d.getDate() + n); return isoLocal(d); }
 // times in the data's time zone (the server's or the phone's, from the summary); before the first summary the system's
+// the first use of Intl loads the language and time zone data: timed for the startup times
+const BOOT_INTL_START = performance.now();
 let TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+const BOOT_INTL_END = performance.now();
 const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 let current = today();
 
@@ -265,7 +271,7 @@ function stageChart(box, sl) {
 
 /* ================= state and navigation ================= */
 let S = null, T = null, V = null, tab = "today", vitSel = "rhr";
-let SETTINGS = { lang: null, hints: [] };  // /api/settings: language and usage hints already used
+let SETTINGS = { lang: null, hints: [], save_mine: false };  // /api/settings: language, usage hints already used, save_mine
 const TITLES = { today: "tab.today", fitness: "tab.fitness", sleep: "tab.sleep", food: "title.food", health: "tab.health", profile: "ui.app.profile_method" };
 
 function show(name) {
@@ -1634,31 +1640,41 @@ function openPick(meal) {
   pickMeal = meal; pickName = mealName(meal);
   $("pickTitle").textContent = t("food.add_to", { meal: pickName.toLowerCase() });
   $("pickSearch").value = "";
+  $("pickScanned").hidden = true; $("pickList").hidden = false;
   $("pickScan").hidden = !ANDROID;  // the camera exists only in the app; in the browser the code can be typed
   drawPick();
   openModal("pickSheet");
 }
+// Recent on top (the last foods, recipes and saved meals used in the diary), then the user's own by use
 function drawPick() {
   const q = $("pickSearch").value.trim().toLowerCase();
   const box = $("pickList"); box.replaceChildren();
+  const uses = FOODS.uses || {};
+  const byUse = (a, b) => (uses[b.id] || 0) - (uses[a.id] || 0) || a.name.localeCompare(b.name);
   const match = (x) => !q || x.name.toLowerCase().includes(q);
-  const meals = FOODS.meals.filter(match), foods = FOODS.foods.filter(match);
+  const meals = FOODS.meals.filter(match).sort(byUse), foods = FOODS.foods.filter(match).sort(byUse);
+  const recent = q ? [] : (FOODS.recent || []).map((r) => (r.kind === "meal" ? FOODS.meals : FOODS.foods).find((x) => x.id === r.id)
+    && { kind: r.kind, it: (r.kind === "meal" ? FOODS.meals : FOODS.foods).find((x) => x.id === r.id) }).filter(Boolean);
+  if (recent.length) h("div", "pick-head", t("food.recent"), box);
+  for (const x of recent) (x.kind === "meal" ? pickMealRow : pickFoodRow)(x.it, box);
   if (meals.length) h("div", "pick-head", t("ui.food.saved_meals"), box);
-  for (const m of meals) {
-    const b = h("button", "pick-row", null, box); const tb = h("span", null, null, b);
-    h("b", null, m.name, tb); h("small", null, m.items.map((i) => i.name).join(", "), tb);
-    h("small", null, t("unit.kcal_v", { v: m.kcal }), b);
-    b.addEventListener("click", () => nutSave("/api/diary", { date: current, op: "add_meal", meal: pickMeal, template: m.id }, t("food.added", { name: m.name }), { sheet: "pickSheet" }));
-  }
+  for (const m of meals) pickMealRow(m, box);
   if (foods.length) h("div", "pick-head", t("food.foods_recipes"), box);
-  for (const f of foods) {
-    const b = h("button", "pick-row", null, box); const tb = h("span", null, null, b);
-    h("b", null, f.name, tb);
-    h("small", null, t(f.kind === "recipe" ? "food.recipe_kcal100" : "food.kcal100", { v: f.per100.kcal }), tb);
-    b.addEventListener("click", () => { closeModal("pickSheet"); openEntry({ mode: "new", food: f, meal: pickMeal }); });
-  }
+  for (const f of foods) pickFoodRow(f, box);
   if (!meals.length && !foods.length) empty(box, t(FOODS.foods.length ? "food.pick_no_results" : "food.pick_none"));
   catSearchSoon($("pickSearch").value.trim());
+}
+function pickMealRow(m, box) {
+  const b = h("button", "pick-row", null, box); const tb = h("span", null, null, b);
+  h("b", null, m.name, tb); h("small", null, m.items.map((i) => i.name).join(", "), tb);
+  h("small", null, t("unit.kcal_v", { v: m.kcal }), b);
+  b.addEventListener("click", () => nutSave("/api/diary", { date: current, op: "add_meal", meal: pickMeal, template: m.id }, t("food.added", { name: m.name }), { sheet: "pickSheet" }));
+}
+function pickFoodRow(f, box) {
+  const b = h("button", "pick-row", null, box); const tb = h("span", null, null, b);
+  h("b", null, f.name, tb);
+  h("small", null, t(f.kind === "recipe" ? "food.recipe_kcal100" : "food.kcal100", { v: f.per100.kcal }), tb);
+  b.addEventListener("click", () => { closeModal("pickSheet"); openEntry({ mode: "new", food: f, meal: pickMeal }); });
 }
 
 /* ---------- food catalog (community databases, searched on the phone: no request leaves it) ---------- */
@@ -1666,11 +1682,27 @@ let CATALOG = null, catTimer = null, catSeq = 0;
 const NUTR_ROWS = ["kcal", "protein", "carbs", "fat", "fiber", "sat", "salt"];
 const srcShort = (src) => (src === "user" ? t("cat.src.user") : t(`cat.src.${src}`));
 const isBarcode = (q) => /^\d{8,14}$/.test(q);
+// the same product code in every form (as hc.gtin_key): EAN-8, UPC-A, EAN-13 and GTIN-14 as 14 digits
+const gtinKey = (code) => (code && isBarcode(code) ? code.padStart(14, "0") : null);
+// the user's food with this code, the most used if more than one (older data may have several)
+function mineByCode(code) {
+  const key = gtinKey(code), uses = (FOODS && FOODS.uses) || {};
+  if (!key || !FOODS) return null;
+  return FOODS.foods.filter((f) => f.kind === "food" && gtinKey(f.barcode) === key)
+    .sort((a, b) => (uses[b.id] || 0) - (uses[a.id] || 0))[0] || null;
+}
+// GS1 check digit (as hc.gs1_check_ok): from the right, weights 3, 1, 3, ... ; a single wrong digit never passes
+function gs1Ok(code) {
+  let s = 0;
+  for (let i = code.length - 2, w = 3; i >= 0; i--, w = 4 - w) s += Number(code[i]) * w;
+  return (10 - (s % 10)) % 10 === Number(code[code.length - 1]);
+}
 function catSearchSoon(q) {
   clearTimeout(catTimer);
   const seq = ++catSeq;
   const box = $("pickCat");
   if (q.length < 2) { box.replaceChildren(); return; }
+  if (isBarcode(q) && !gs1Ok(q)) { box.replaceChildren(); empty(box, t("cat.code_check", { code: q })); return; }
   catTimer = setTimeout(async () => {
     let r;
     try {
@@ -1723,20 +1755,20 @@ function drawCatResults(r, byCode) {
     nb.addEventListener("click", () => { closeModal("pickSheet"); openFoodEditor(null, "", pickMeal, null, r.code); });
   }
 }
-// a scanned code: one product opens its details (name, brand and country before adding), several are listed to choose
-async function lookupScanned(code) {
-  $("pickSearch").value = code;
-  let r;
-  try { r = await getJson(`/api/catalog/barcode?code=${code}&lang=${I18N.lang()}`); } catch (e) { toast(t("err.failed", { msg: e.message }), true); return; }
-  const mine = r.mine.map((f) => FOODS && FOODS.foods.find((x) => x.id === f.id)).filter(Boolean);
-  if (mine.length + r.community.length === 1) {
+// a scanned code: one of the user's foods opens at once (with the number read in its subtitle); otherwise the number
+// read is shown, editable, with the products that have it (a misread digit shows at a glance)
+function showScanned(code) {
+  const mine = mineByCode(code);
+  if (mine) {
     closeModal("pickSheet");
-    if (mine.length) openEntry({ mode: "new", food: mine[0], meal: pickMeal });
-    else openEntry({ mode: "new", cat: r.community[0], meal: pickMeal });
+    openEntry({ mode: "new", food: mine, meal: pickMeal, scanned: code });
     return;
   }
-  drawPick();
-  if (mine.length + r.community.length > 1) toast(t("cat.scan_choose", { n: mine.length + r.community.length }));
+  $("pickSearch").value = "";
+  $("pickList").hidden = true; $("pickScan").hidden = true;  // #scanAgain takes its place
+  $("pickScanned").hidden = false;
+  $("scanCode").value = code;
+  catSearchSoon(code);
 }
 function valuesTable(box, per100, srcOf) {
   box.replaceChildren();
@@ -1755,7 +1787,7 @@ async function scanBarcode() {
 }
 window.helioScanned = (r) => {
   if (r && r.code) {
-    lookupScanned(r.code);
+    showScanned(r.code);
   } else if (r && (r.error === "permission" || r.error === "camera")) {
     toast(t(`cat.scan_${r.error}`), true);
   }
@@ -1770,12 +1802,15 @@ function openEntry(ctx) {
   $("entryTitle").textContent = cat ? (cat.brand ? `${cat.name} (${cat.brand})` : cat.name) : isNew ? ctx.food.name : ctx.entry.name;
   const entrySrc = !isNew && ctx.entry.src && ctx.entry.src.src !== "user" ? ctx.entry.src : null;
   $("entrySub").textContent = cat ? [cat.brand, countryText(cat), t("cat.entry_sub", { src: srcShort(cat.src), version: cat.version })].filter(Boolean).join(" · ")
+    : isNew && ctx.scanned ? [t("cat.scanned_code", { code: ctx.scanned }), t("food.kcal100", { v: ctx.food.per100.kcal })].join(" · ")
     : isNew ? t(ctx.food.kind === "recipe" ? "food.entry_kcal_cooked" : "food.kcal100", { v: ctx.food.per100.kcal })
     : entrySrc ? t("cat.entry_copied", { src: srcShort(entrySrc.src) }) : t("food.entry_copied");
   // every value with its source: the catalog, the user's food (a copy keeps the source of unchanged values) or the diary copy
   const fsrc = food && food.src ? food.src : null;
   valuesTable($("entryValues"), entryCtx.per100, (k) => (cat ? cat.src : entrySrc ? entrySrc.src : fsrc && fsrc[k] ? fsrc[k] : "user"));
   $("entrySaveMine").hidden = !cat;
+  $("entryKeepRow").hidden = !(cat && isNew);
+  $("entryKeep").checked = SETTINGS.save_mine === true;  // remembered (settings.json: exported and imported)
   $("entryG").value = isNew ? "" : ctx.entry.g;
   const ps = $("entryPortions"); ps.replaceChildren();
   const portions = (cat ? cat.portions : food && food.portions) || [];
@@ -2515,6 +2550,21 @@ function bootRows(java, py) {
   // on the server Python started long before this page: only what happened for this opening
   return { zero, rows: rows.filter((r) => r.start >= zero - 1).sort((a, b) => a.start - b.start || a.end - b.end) };
 }
+// barcode scans of the app's process (Java, only in memory): frames and time to accept a code, reads dropped by each check
+function bootScanLines(scans) {
+  const out = [];
+  for (const sc of scans || []) {
+    const key = ["ok", "permission", "camera"].includes(sc.result) ? sc.result : "cancel";
+    out.push(t(`boot.scan.${key}`, { format: sc.format || "", frames: sc.frames, ms: sc.ms || 0 }));
+    if (sc.frames) {
+      out.push(t("boot.scan.frames", { size: sc.size || "?", frame_ms: sc.frame_ms, camera_ms: sc.camera_ms || 0 }));
+      const n = (k) => sc[k] || 0;
+      out.push(t("boot.scan.checks", { passed: sc.passed, rejected: n("digits") + n("scale") + n("quiet") + n("rows") + n("contrast"),
+        digits: n("digits"), scale: n("scale"), quiet: n("quiet"), rows: n("rows"), contrast: n("contrast") }));
+    }
+  }
+  return out;
+}
 async function renderBoot() {
   const box = $("bootList"); box.replaceChildren();
   let java = null, py = null;
@@ -2536,6 +2586,12 @@ async function renderBoot() {
   const end = rows.length ? Math.max(...rows.map((r) => r.end)) : zero;
   h("li", "boot-total", t("boot.total", { v: end - zero }), box);
   lines.push(t("boot.total", { v: end - zero }));
+  const scans = bootScanLines(java && java.scans);
+  if (scans.length) {
+    h("li", "boot-scans", t("boot.scans"), box);
+    lines.push("", t("boot.scans"));
+    for (const x of scans) { h("li", "boot-scan", x, box); lines.push(x); }
+  }
   bootText = lines.join("\n");
 }
 async function copyText(text) {
@@ -2682,8 +2738,17 @@ $("foodsSearch").addEventListener("input", () => { if (FOODS) renderFoodsList(FO
 $("newFood").addEventListener("click", () => openFoodEditor(null));
 $("newRecipe").addEventListener("click", () => openRecipeEditor(null));
 $("newMeal").addEventListener("click", () => openMealEditor(null));
-$("pickSearch").addEventListener("input", drawPick);
+$("pickSearch").addEventListener("input", () => {
+  $("pickScanned").hidden = true; $("pickList").hidden = false; $("pickScan").hidden = !ANDROID;
+  drawPick();
+});
 $("pickScan").addEventListener("click", scanBarcode);
+$("scanAgain").addEventListener("click", scanBarcode);
+$("scanCode").addEventListener("input", () => {
+  const v = $("scanCode").value.replace(/\D/g, "").slice(0, 14);
+  if (v !== $("scanCode").value) $("scanCode").value = v;
+  catSearchSoon(v);
+});
 $("pickNewFood").addEventListener("click", () => { closeModal("pickSheet"); openFoodEditor(null, $("pickSearch").value.trim(), pickMeal); });
 $("pickNewRecipe").addEventListener("click", () => { closeModal("pickSheet"); openRecipeEditor(null, $("pickSearch").value.trim(), pickMeal); });
 $("entryG").addEventListener("input", entryPreview);
@@ -2691,13 +2756,28 @@ $("entrySave").addEventListener("click", () => {
   const g = numIn("entryG");
   if (g == null || !(g >= 0.1 && g <= 5000)) return showErr("entryErr", t("v.grams"));
   const c = entryCtx;
-  const payload = c.mode === "new" && c.cat ? { date: current, op: "add", meal: entryMeal, catalog: { src: c.cat.src, ref: c.cat.ref }, g, lang: I18N.lang() }
+  const payload = c.mode === "new" && c.cat ? { date: current, op: "add", meal: entryMeal, catalog: { src: c.cat.src, ref: c.cat.ref }, g,
+    lang: I18N.lang(), ...($("entryKeep").checked ? { save: true } : {}) }
     : c.mode === "new" ? { date: current, op: "add", meal: entryMeal, food: c.food.id, g }
     : { date: current, op: "update", id: c.entry.id, g, meal: entryMeal };
   const name = c.cat ? catDisplayName(c.cat) : c.mode === "new" ? c.food.name : "";
   nutSave("/api/diary", payload, c.mode === "new" ? t("food.added", { name }) : t("food.entry_updated"), { sheet: "entrySheet", btn: "entrySave", err: "entryErr" });
 });
-$("entrySaveMine").addEventListener("click", () => { const c = entryCtx; closeModal("entrySheet"); openFoodEditor(null, "", c.meal, c.cat); });
+$("entrySaveMine").addEventListener("click", () => {
+  const c = entryCtx, mine = mineByCode(c.cat.barcode);
+  closeModal("entrySheet");
+  if (mine) {  // one food per product code: the one already there
+    toast(t("cat.already_mine", { name: mine.name }));
+    openEntry({ mode: "new", food: mine, meal: c.meal });
+  } else {
+    openFoodEditor(null, "", c.meal, c.cat);
+  }
+});
+$("entryKeep").addEventListener("change", async () => {
+  const on = $("entryKeep").checked;
+  try { SETTINGS = { ...SETTINGS, ...(await postJson("/api/settings", { save_mine: on })) }; }
+  catch (e) { $("entryKeep").checked = !on; toast(t("err.not_saved", { msg: e.message }), true); }
+});
 $("entryRemove").addEventListener("click", () => nutSave("/api/diary", { date: current, op: "remove", id: entryCtx.entry.id }, t("food.entry_removed"),
   { sheet: "entrySheet", btn: "entryRemove", err: "entryErr" }));
 for (const [id] of FOOD_FIELDS) $(id).addEventListener("input", foodCheck);
@@ -2783,4 +2863,8 @@ async function start() {
   loadBand();
   loadCatalog();
 }
+bootMark("page.js_start", BOOT_JS_START, BOOT_JS_START);
+bootMark("page.intl", BOOT_INTL_START, BOOT_INTL_END);
+const BOOT_JS_END = performance.now();
+bootMark("page.js_end", BOOT_JS_END, BOOT_JS_END);
 start();

@@ -144,17 +144,42 @@ def rounded(v):
     return {k: (None if v.get(k) is None else round(float(v[k]), 2)) for k in NUTRIENTS}
 
 
-def clean_barcode(code):
-    """Digits of a barcode (8 to 14, spaces ignored), otherwise None."""
+def barcode_digits(code):
+    """Digits of a barcode (8 to 14, spaces ignored), otherwise None; the check digit is not looked at (codes
+    already stored, catalog data)."""
     code = re.sub(r"\s", "", str(code or ""))
     return code if re.fullmatch(r"\d{8,14}", code) else None
+
+
+def gs1_check_ok(digits):
+    """GS1 check digit (EAN-8, UPC-A, EAN-13, GTIN-14): from the right, weights 3, 1, 3, ... on the digits before
+    the last one; the last one makes the sum a multiple of 10. It catches every single wrong digit and almost
+    every swap of two neighbouring digits."""
+    body, check = digits[:-1], int(digits[-1])
+    total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(body)))
+    return (10 - total % 10) % 10 == check
+
+
+def barcode_problem(code):
+    """None for a valid barcode, "format" if it is not 8 to 14 digits, "check" if the check digit is wrong."""
+    digits = barcode_digits(code)
+    if not digits:
+        return "format"
+    return None if gs1_check_ok(digits) else "check"
+
+
+def clean_barcode(code):
+    """Digits of a barcode (8 to 14, spaces ignored) with the right GS1 check digit, otherwise None: a code read
+    or typed with a wrong digit is never saved nor looked up."""
+    return barcode_digits(code) if barcode_problem(code) is None else None
 
 
 def gtin_key(code):
     """The same product code in every form, as GTIN-14: EAN-8, UPC-A (12), EAN-13 and GTIN-14 with or without
     the leading zeros all give the same 14 digits ("20570910" = "0000020570910" = "00000020570910"). None if
-    the code is not 8 to 14 digits."""
-    code = clean_barcode(code)
+    the code is not 8 to 14 digits. The check digit is not looked at here: the codes from the user are checked
+    with clean_barcode before (a code with a wrong check digit cannot match a valid one anyway)."""
+    code = barcode_digits(code)
     return code.zfill(14) if code else None
 
 

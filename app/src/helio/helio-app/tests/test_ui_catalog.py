@@ -3,6 +3,7 @@ source of every value), no request leaves the page's own server while searching,
 without saving them, "Save to my foods", typed barcodes, the Food database card in Profile. Like test_ui.py:
 Chromium with Playwright, skipped on the server."""
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -86,7 +87,7 @@ class CatalogUI(UIBase):
 
     def test_search_never_leaves_the_server(self):
         self.open_pick()
-        for q in ("me", "mel", "mela", "biscotti", "caffe", "8001234567890", "zzzz"):
+        for q in ("me", "mel", "mela", "biscotti", "caffe", "8001234567897", "zzzz"):
             self.search(q)
             self.page.wait_for_timeout(300)
         expect(self.page.locator("#pickCat")).to_contain_text(self.L("cat.none"))
@@ -119,7 +120,7 @@ class CatalogUI(UIBase):
 
     def test_save_to_my_foods_as_a_copy(self):
         self.open_pick("dinner")
-        self.search("8001234567890")
+        self.search("8001234567897")
         row = self.page.locator("#pickCat .pick-row").first
         expect(row).to_contain_text("Biscotti integrali")
         expect(row.locator(".src-tag")).to_have_text("OFF")
@@ -137,28 +138,159 @@ class CatalogUI(UIBase):
         foods = json.loads((self.state / "foods.json").read_text())["foods"]
         (f,) = foods.values()
         self.assertEqual((f["origin"]["src"], f["origin"]["ref"], f["barcode"], f["per100"]["protein"]),
-                         ("off", "8001234567890", "8001234567890", 8.0))
+                         ("off", "8001234567897", "8001234567897", 8.0))
         self.page.click("#entryClose")
         # my copy now comes first for the same barcode, the community product stays
         self.open_pick("dinner")
-        self.search("8001234567890")
+        self.search("8001234567897")
         expect(self.page.locator("#pickCat .pick-row")).to_have_count(2)
         expect(self.page.locator("#pickCat .pick-row").first).not_to_contain_text("OFF")
 
-    def test_scanned_code_with_one_product_shows_it_before_adding(self):
-        """In the app the camera sends the digits back with window.helioScanned; in the browser the button is hidden."""
+    def test_scanned_code_is_shown_editable_before_anything(self):
+        """In the app the camera sends the digits back with window.helioScanned; in the browser the button is hidden.
+        The number read stays in sight and can be corrected; nothing opens nor is added by itself."""
         self.open_pick()
         expect(self.page.locator("#pickScan")).to_be_hidden()
+        expect(self.page.locator("#pickScanned")).to_be_hidden()
         self.requests.clear()
-        self.page.evaluate("window.helioScanned({code: '8001234567890'})")
-        expect(self.page.locator("#entrySheet")).to_be_visible()  # name and brand first, nothing added yet
-        expect(self.page.locator("#entryTitle")).to_have_text("Biscotti integrali (Marca)")
-        expect(self.page.locator("#entrySub")).to_contain_text("Marca")
+        self.page.evaluate("window.helioScanned({code: '8001234567897'})")
+        expect(self.page.locator("#pickScanned")).to_be_visible()
+        expect(self.page.locator("#pickScanned")).to_contain_text(self.L("cat.scanned"))
+        expect(self.page.locator("#scanCode")).to_have_value("8001234567897")
+        expect(self.page.locator("#scanAgain")).to_have_text(self.L("cat.scan_again"))
+        expect(self.page.locator("#pickList")).to_be_hidden()
+        rows = self.page.locator("#pickCat .pick-row")
+        expect(rows).to_have_count(1)
+        expect(rows.first).to_contain_text("Biscotti integrali")
+        expect(self.page.locator("#entrySheet")).to_be_hidden()
         self.assertFalse(list(self.state.glob("diary-*.json")))
         self.assertEqual({urlparse(u).path for u in self.requests}, {"/api/catalog/barcode"})
+        # the number and the button fit a small phone, in both languages
+        self.page.set_viewport_size({"width": 360, "height": 780})
+        btn = self.page.locator("#scanAgain").bounding_box()
+        self.assertLessEqual(btn["x"] + btn["width"], 360)
+        self.assertTrue(self.page.evaluate("(e => e.scrollWidth <= e.clientWidth)(document.getElementById('scanCode'))"),
+                        "all 13 digits in sight")
+        if os.environ.get("HELIO_SHOTS"):
+            self.page.locator("#pickSheet .sheet-body").screenshot(path=f"{os.environ['HELIO_SHOTS']}/scan-{UI_LANG}.png")
+        self.page.set_viewport_size({"width": 412, "height": 915})
+        # one digit corrected the wrong way: the check digit says so at once, without asking the server
+        self.requests.clear()
+        self.page.fill("#scanCode", "8001234567807")
+        expect(self.page.locator("#pickCat")).to_contain_text(self.Lpart("cat.code_check", 0))
+        expect(self.page.locator("#pickCat .pick-row")).to_have_count(0)
+        self.assertEqual([u for u in self.requests if "/api/catalog" in u], [])
+        self.page.fill("#scanCode", "8001 2345-67897")  # only digits are kept
+        expect(self.page.locator("#scanCode")).to_have_value("8001234567897")
+        expect(rows).to_have_count(1)
+        rows.first.click()
+        expect(self.page.locator("#entryTitle")).to_have_text("Biscotti integrali (Marca)")
+        expect(self.page.locator("#entrySub")).to_contain_text("Marca")
+        self.page.click("#entryClose")
+        # scan again asks the app for the camera; typing in the search goes back to the normal list
+        self.open_pick()
+        self.page.evaluate("window.helioScanned({code: '8001234567897'})")
+        self.requests.clear()
+        self.page.click("#scanAgain")
+        self.page.wait_for_timeout(200)
+        self.assertIn("/api/android/action", {urlparse(u).path for u in self.requests})
+        self.page.fill("#pickSearch", "mela")
+        expect(self.page.locator("#pickScanned")).to_be_hidden()
+        expect(self.page.locator("#pickList")).to_be_visible()
         self.page.evaluate("window.helioScanned({error: 'permission'})")
         self.toast(self.Lpart("cat.scan_permission", 0))
         self.assertEqual(self.outside, [])
+
+    def fresh(self):
+        self.page.reload()
+        self.wait_catalog()
+
+    def test_save_also_to_my_foods_is_remembered(self):
+        self.open_pick("dinner")
+        self.search("8001234567897")
+        self.page.locator("#pickCat .pick-row").first.click()
+        expect(self.page.locator("#entryKeepRow")).to_be_visible()
+        expect(self.page.locator("#entryKeepRow")).to_contain_text(self.L("cat.save_also"))
+        expect(self.page.locator("#entryKeep")).not_to_be_checked()
+        self.page.check("#entryKeep")
+        self.page.wait_for_function("() => SETTINGS.save_mine === true")
+        self.assertTrue(json.loads((self.state / "settings.json").read_text())["save_mine"])
+        self.page.fill("#entryG", "30")
+        self.page.click("#entrySave")
+        expect(self.page.locator("#entrySheet")).to_be_hidden()
+        (f,) = json.loads((self.state / "foods.json").read_text())["foods"].values()
+        self.assertEqual((f["name"], f["barcode"], f["origin"]["ref"]), ("Biscotti integrali (Marca)", "8001234567897", "8001234567897"))
+        (e,) = self.diary()["entries"]
+        self.assertEqual(e["food"], f["id"])
+        # remembered after a reload; the same product again makes no second copy
+        self.fresh()
+        self.open_pick("dinner")
+        self.search("8001234567897")
+        self.page.locator("#pickCat .pick-row", has_text="OFF").click()
+        expect(self.page.locator("#entryKeep")).to_be_checked()
+        self.page.fill("#entryG", "20")
+        self.page.click("#entrySave")
+        expect(self.page.locator("#entrySheet")).to_be_hidden()
+        self.assertEqual(len(json.loads((self.state / "foods.json").read_text())["foods"]), 1)
+        self.assertEqual([x["food"] for x in self.diary()["entries"]], [f["id"], f["id"]])
+        # a food of mine opens without the box
+        self.open_pick("dinner")
+        self.page.locator("#pickList .pick-row", has_text="Biscotti integrali").first.click()
+        expect(self.page.locator("#entryKeepRow")).to_be_hidden()
+
+    def test_scanned_code_of_my_food_opens_it(self):
+        """My food with the UPC-A code; the scanner reads the EAN-13 form of it: my food opens, nothing else."""
+        self.food("Mela snack di casa", OATS, barcode="012345678905")
+        self.fresh()
+        self.open_pick()
+        self.requests.clear()
+        self.page.evaluate("window.helioScanned({code: '0012345678905'})")
+        expect(self.page.locator("#entrySheet")).to_be_visible()
+        expect(self.page.locator("#entryTitle")).to_have_text("Mela snack di casa")
+        expect(self.page.locator("#entrySub")).to_contain_text("0012345678905")
+        expect(self.page.locator("#entryKeepRow")).to_be_hidden()
+        self.assertEqual([u for u in self.requests if "/api/catalog" in u], [])
+
+    def test_save_to_my_foods_uses_my_food_with_that_code(self):
+        self.food("I miei biscotti", OATS, barcode="8001234567897")
+        self.fresh()
+        self.open_pick()
+        self.search("8001234567897")
+        self.page.locator("#pickCat .pick-row", has_text="OFF").click()
+        self.page.click("#entrySaveMine")
+        self.toast(self.Lpart("cat.already_mine", 0))
+        expect(self.page.locator("#entryTitle")).to_have_text("I miei biscotti")
+        expect(self.page.locator("#foodSheet")).to_be_hidden()
+        self.assertEqual(len(json.loads((self.state / "foods.json").read_text())["foods"]), 1)
+
+    def test_recent_on_top_then_my_foods_by_use(self):
+        ids = {n: self.food(n, OATS) for n in ("Avena", "Banana", "Cracker", "Datteri")}
+        tpl = self.api("/api/meal", {"meal": {"name": "Colazione solita", "meal": "breakfast", "items": [[ids["Avena"], 40]]}})["id"]
+        day = DAY.isoformat()
+        for name in ("Banana", "Banana", "Cracker", "Banana"):
+            self.api("/api/diary", {"date": day, "op": "add", "meal": "lunch", "food": ids[name], "g": 50})
+        self.api("/api/diary", {"date": day, "op": "add_meal", "meal": "breakfast", "template": tpl})
+        self.fresh()
+        self.open_pick()
+        heads = self.page.locator("#pickList .pick-head").all_inner_texts()
+        self.assertEqual(heads[0].lower(), self.L("food.recent").lower())
+        rows = self.page.locator("#pickList .pick-row b").all_inner_texts()
+        # Recent: the saved meal (last), Banana, Cracker; then the saved meals; then my foods by use
+        self.assertEqual(rows[:3], ["Colazione solita", "Banana", "Cracker"])
+        self.assertEqual(rows[3], "Colazione solita")
+        self.assertEqual(rows[4:], ["Banana", "Cracker", "Avena", "Datteri"])
+        # a search shows no Recent
+        self.page.fill("#pickSearch", "a")
+        self.assertNotIn(self.L("food.recent").lower(), [x.lower() for x in self.page.locator("#pickList .pick-head").all_inner_texts()])
+
+    def test_typed_code_with_a_wrong_check_digit(self):
+        self.open_pick()
+        self.search("8001234567890")
+        expect(self.page.locator("#pickCat")).to_contain_text("8001234567890")
+        expect(self.page.locator("#pickCat")).to_contain_text(self.Lpart("cat.code_check", 0))
+        self.assertEqual([u for u in self.requests if "/api/catalog" in u], [])
+        self.search("8001234567897")
+        expect(self.page.locator("#pickCat .pick-row")).to_have_count(1)
 
     def test_scanned_code_with_several_products_lets_me_choose(self):
         self.open_pick()
@@ -176,7 +308,7 @@ class CatalogUI(UIBase):
 
     def test_scanned_code_not_found_creates_a_food_with_it(self):
         self.open_pick("dinner")
-        self.page.evaluate("window.helioScanned({code: '4000000000000'})")
+        self.page.evaluate("window.helioScanned({code: '4000000000006'})")
         self.page.locator("#pickCat button.add-btn").click()
         for sel, v in (("#foodName", "Torta della nonna"), ("#fKcal", "350"), ("#fProtein", "6"), ("#fCarbs", "45"),
                        ("#fFat", "16"), ("#fFiber", "1")):
@@ -184,11 +316,11 @@ class CatalogUI(UIBase):
         self.page.click("#foodSave")
         expect(self.page.locator("#entrySheet")).to_be_visible()
         (f,) = json.loads((self.state / "foods.json").read_text())["foods"].values()
-        self.assertEqual(f["barcode"], "4000000000000")
+        self.assertEqual(f["barcode"], "4000000000006")
 
     def test_unknown_barcode(self):
         self.open_pick()
-        self.search("4000000000000")
+        self.search("4000000000006")
         expect(self.page.locator("#pickCat")).to_contain_text(self.Lpart("cat.code_none", 0))
 
     def test_food_database_card(self):
@@ -271,7 +403,7 @@ class CatalogUI(UIBase):
         copies = {f["origin"]["ref"]: f for f in data["foods"].values() if f.get("origin")}
         self.assertEqual(sorted(copies), sorted([bis["ref"], apple["ref"]]))
         self.assertEqual(copies[bis["ref"]]["name"], "Biscotti integrali (Marca)")
-        self.assertEqual(copies[bis["ref"]]["barcode"], "8001234567890")
+        self.assertEqual(copies[bis["ref"]]["barcode"], "8001234567897")
         (meal,) = data["meals"].values()
         self.assertEqual(meal["items"], [[oats, 40], [copies[bis["ref"]]["id"], 30], [copies[apple["ref"]]["id"], 100]])
         # a second saved meal from the same diary meal uses the copies: no question, no new foods

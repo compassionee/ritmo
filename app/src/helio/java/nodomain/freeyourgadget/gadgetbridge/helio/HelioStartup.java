@@ -34,8 +34,8 @@ import java.util.regex.Pattern;
 /**
  * Startup timeline of the :helio process (Profile > About > Startup times): Java's steps and, for each API path, the
  * first answer as the WebView saw it (waiting for Python included). Wall clock milliseconds, the clock of the page and
- * of Python too, so the page can put the three sides on one line. Only in memory: nothing is written or sent anywhere,
- * no data, paths without their query.
+ * of Python too, so the page can put the three sides on one line. Also the barcode scans of the process
+ * ({@link HelioScanStats}). Only in memory: nothing is written or sent anywhere, no data, paths without their query.
  */
 public final class HelioStartup {
     static final int MAX_MARKS = 32;
@@ -93,7 +93,7 @@ public final class HelioStartup {
                 a.put(new JSONObject().put("path", e.getKey())
                         .put("start", e.getValue()[0]).put("end", e.getValue()[1]));
             }
-            return new JSONObject().put("marks", m).put("api", a).put("now", now()).toString();
+            return new JSONObject().put("marks", m).put("api", a).put("scans", HelioScanStats.json()).put("now", now()).toString();
         } catch (final JSONException e) {
             throw new IllegalStateException(e);
         }

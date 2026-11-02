@@ -255,7 +255,7 @@ class FoodCatalogUse(Base):
         paths = self.opened()
         for q in ("pollo", "riso", "mela", "pasta", "latte"):
             self.assertTrue(self.hc.search(self.cat, q, "it"))
-        self.hc.by_barcode(self.cat, "8001234567890")
+        self.hc.by_barcode(self.cat, "8001234567897")
         self.assertEqual(len(paths), 1, paths)
         self.assertIn("mode=ro&immutable=1", paths[0])
         with self.hc._reading(self.cat, "generic") as con:

@@ -29,12 +29,17 @@ import android.app.Activity;
 import android.app.Application;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.util.Size;
+import android.view.View;
+
+import androidx.camera.core.resolutionselector.ResolutionStrategy;
 
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.oned.EAN13Writer;
 import com.google.zxing.oned.UPCAWriter;
 
+import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
@@ -44,6 +49,8 @@ import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 
 import java.util.Random;
+
+import nodomain.freeyourgadget.gadgetbridge.R;
 
 /**
  * Barcode scanner: ZXing reads EAN/UPC codes from camera-like frames; the camera permission is asked only by
@@ -124,6 +131,78 @@ public class HelioScanTest {
         final ActivityController<TestScanActivity> c = Robolectric.buildActivity(TestScanActivity.class).setup();
         assertNull(shadowOf(c.get()).getLastRequestedPermission());
         assertEquals(1, c.get().starts);
+    }
+
+    @Test
+    public void guideLineAndTorch() {
+        cameraFeature();
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.CAMERA);
+        final TestScanActivity a = Robolectric.buildActivity(TestScanActivity.class).setup().get();
+        assertEquals(View.VISIBLE, a.guide.getVisibility());
+        assertEquals(View.GONE, a.torch.getVisibility());  // until the camera says it has a flash
+        a.setTorchAvailable(true);
+        assertEquals(View.VISIBLE, a.torch.getVisibility());
+        assertEquals(a.getString(R.string.helio_scan_torch_on), a.torch.getText().toString());
+        a.torch.performClick();
+        assertEquals(a.getString(R.string.helio_scan_torch_off), a.torch.getText().toString());
+        a.torch.performClick();
+        assertEquals(a.getString(R.string.helio_scan_torch_on), a.torch.getText().toString());
+    }
+
+    @Test
+    public void analysisAt1280x720WithAFallback() {
+        assertEquals(new Size(1280, 720), HelioScanActivity.ANALYSIS_SIZE);
+        final ResolutionStrategy s = HelioScanActivity.analysisSelector().getResolutionStrategy();
+        assertNotNull(s);
+        assertEquals(HelioScanActivity.ANALYSIS_SIZE, s.getBoundSize());
+        assertEquals(ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER, s.getFallbackRule());
+    }
+
+    @Test
+    public void scanStatisticsOnlyInMemory() throws Exception {
+        HelioScanStats.clear();
+        final HelioScanStats.Scan scan = new HelioScanStats.Scan();
+        scan.cameraAsked(1000);
+        final int[] rejected = {1, 2, 0, 3, 4};
+        scan.frame(1500, 1540, "720x1280", null, rejected);
+        scan.frame(1600, 1630, "720x1280", new HelioBarcodeDecoder.Read("4006381333931", BarcodeFormat.EAN_13), rejected);
+        scan.frame(1700, 1750, "720x1280", new HelioBarcodeDecoder.Read("4006381333931", BarcodeFormat.EAN_13), rejected);
+        scan.accepted(BarcodeFormat.EAN_13);
+        final JSONObject o = scan.json("ok", 9999);
+        assertEquals("ok", o.getString("result"));
+        assertEquals(3, o.getInt("frames"));
+        assertEquals(2, o.getInt("passed"));
+        assertEquals(250, o.getLong("ms"));            // first frame to the accepting one
+        assertEquals(500, o.getLong("camera_ms"));
+        assertEquals(40.0, o.getDouble("frame_ms"), 0.01);
+        assertEquals("720x1280", o.getString("size"));
+        assertEquals("EAN_13", o.getString("format"));
+        assertEquals(1, o.getInt("digits"));
+        assertEquals(2, o.getInt("scale"));
+        assertEquals(3, o.getInt("rows"));
+        assertEquals(4, o.getInt("contrast"));
+        assertFalse(o.toString().contains("4006381333931"));  // no digits of the codes
+        for (int i = 0; i < HelioScanStats.MAX + 3; i++) {
+            HelioScanStats.add(scan.json("cancel", 2000));
+        }
+        assertEquals(HelioScanStats.MAX, HelioScanStats.json().length());
+        assertEquals(HelioScanStats.MAX, new JSONObject(HelioStartup.json()).getJSONArray("scans").length());
+        HelioScanStats.clear();
+    }
+
+    @Test
+    public void everyClosedScannerIsCounted() throws Exception {
+        HelioScanStats.clear();
+        Robolectric.buildActivity(TestScanActivity.class).setup().destroy();  // no camera: error
+        cameraFeature();
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.CAMERA);
+        Robolectric.buildActivity(TestScanActivity.class).setup().destroy();  // left with Back
+        final org.json.JSONArray scans = HelioScanStats.json();
+        assertEquals(2, scans.length());
+        assertEquals("camera", scans.getJSONObject(0).getString("result"));
+        assertEquals("cancel", scans.getJSONObject(1).getString("result"));
+        assertEquals(0, scans.getJSONObject(1).getInt("frames"));
+        HelioScanStats.clear();
     }
 
     @Test

@@ -26,8 +26,10 @@
     <string name="helio_import_unreadable">The file cannot be read or is larger than 64 MB.</string>
     <string name="helio_no_band">No band in Gadgetbridge: add it from here</string>
     <string name="helio_band_connecting">Band disconnected: connecting, then try syncing again</string>
-    <string name="helio_scan_hint">Point the camera at the barcode of the product</string>
+    <string name="helio_scan_hint">Frame the barcode so that the red line crosses all its bars</string>
     <string name="helio_scan_cancel">Cancel</string>
+    <string name="helio_scan_torch_on">Torch</string>
+    <string name="helio_scan_torch_off">Torch off</string>
     <string name="helio_catalog_unreadable">The file cannot be read or is larger than 1 GB.</string>
     <string name="helio_authkey_title">Band auth key</string>
     <string name="helio_authkey_band">Band: %1$s (%2$s)</string>

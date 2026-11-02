@@ -536,6 +536,11 @@ svg .exp-mark { stroke: var(--orange); stroke-width: 2.5; stroke-linecap: round;
 .seg-switch.wide button { flex: 1; }
 input.search { width: 100%; margin-top: 10px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line);
   background: var(--surface-2); color: var(--text); font: inherit; color-scheme: dark; }
+.scanned { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.scanned label { font-size: 13px; color: var(--muted); }
+.scanned .row { flex-wrap: wrap; justify-content: flex-start; }
+input.scan-code { flex: 1 1 210px; min-width: 0; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--text); font: 600 20px/1.2 ui-monospace, monospace; letter-spacing: .08em; font-variant-numeric: tabular-nums; color-scheme: dark; }
 .food-list, .pick-list { display: flex; flex-direction: column; margin-top: 8px; }
 .food-row, .pick-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 10px 2px;
   border-top: 1px solid var(--line); text-align: left; }
@@ -590,6 +595,8 @@ details.nut-opt summary { cursor: pointer; color: var(--blue); font-size: 13.5px
 .boot-list .boot-what { overflow-wrap: anywhere; }
 .boot-list small { display: block; color: var(--muted); }
 .boot-list .boot-total { display: block; border-bottom: 0; font-weight: 500; }
+.boot-list .boot-scans { display: block; margin-top: 10px; border-bottom: 0; font-weight: 500; }
+.boot-list .boot-scan { display: block; overflow-wrap: anywhere; }
 .copy-area { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; }
 
 /* "Details": the same expandable block in every card, closed by default, open state kept in the view */

@@ -89,7 +89,7 @@ class UserDataUntouched(Base):
         steps = [
             ("bundled catalog", lambda: h.catalog_info()),
             ("search", lambda: h.catalog_search("mela", "it")),
-            ("barcode", lambda: h.catalog_barcode("8001234567890")),
+            ("barcode", lambda: h.catalog_barcode("8001234567897")),
             ("install", lambda: h.catalog_install(self.off1)),
             ("search after install", lambda: h.catalog_search("biscotti", "it")),
             ("update", lambda: h.catalog_install(self.off2)),
@@ -188,11 +188,11 @@ class SaveToMyFoods(Base):
                                          "origin": {"src": "off", "ref": it["ref"]}}})["id"]
         self.h.save_food({"food": {"id": fid, "name": "Biscotti", "per100": {**it["per100"], "salt": 0.7}}})
         f = self.h.foods_load()[0][fid]
-        self.assertEqual(f["origin"]["ref"], "8001234567890")  # origin and barcode survive the edit
-        self.assertEqual(f["barcode"], "8001234567890")
+        self.assertEqual(f["origin"]["ref"], "8001234567897")  # origin and barcode survive the edit
+        self.assertEqual(f["barcode"], "8001234567897")
         pay = {x["id"]: x for x in self.h.foods_payload()["foods"]}[fid]
         self.assertEqual((pay["src"]["salt"], pay["src"]["fat"]), ("user", "off"))
-        mine = self.h.catalog_barcode("8001234567890")
+        mine = self.h.catalog_barcode("8001234567897")
         self.assertEqual([x["id"] for x in mine["mine"]], [fid])  # my copy first
         self.assertEqual(len(mine["community"]), 1)  # the community product stays, nothing is merged
 
@@ -236,6 +236,29 @@ class BarcodesAndVersions(Base):
             self.assertEqual(r["code"], "20570910")
         with self.assertRaises(self.h.UserError):
             self.h.catalog_barcode("1234")
+
+    def test_wrong_check_digit_is_refused_with_its_own_message(self):
+        self.h.catalog_install(self.off1)
+        for code in ("8001234567890", "8001234567879", "20570919"):  # one digit wrong, two swapped, EAN-8
+            with self.assertRaises(self.h.UserError) as e:
+                self.h.catalog_barcode(code)
+            self.assertEqual(e.exception.msg, {"$": "e.barcode_check", "code": code})
+        with self.assertRaises(self.h.UserError) as e:
+            self.h.save_food({"food": {"name": "Pane", "per100": {"protein": 8, "carbs": 50, "fat": 1, "fiber": 3},
+                                       "barcode": "8001234567890"}})
+        self.assertEqual(e.exception.msg["$"], "e.barcode_check")
+        self.assertIn("8001234567890", str(e.exception))
+        self.assertNotIn("Pane", [f.get("name") for f in self.raw_foods()["foods"].values()])
+
+    def test_stored_code_with_a_wrong_check_digit_is_kept(self):
+        """A code saved before the check (or copied from the catalog) is not lost when the food is edited."""
+        self.h.save_food({"food": {"name": "Pane", "per100": {"protein": 8, "carbs": 50, "fat": 1, "fiber": 3}}})
+        raw = self.raw_foods()
+        fid = next(k for k, f in raw["foods"].items() if f.get("name") == "Pane")
+        raw["foods"][fid]["barcode"] = "8001234567890"
+        (self.state / "foods.json").write_text(json.dumps(raw))
+        self.h.save_food({"food": {"id": fid, "name": "Pane bianco", "per100": {"protein": 8, "carbs": 50, "fat": 1, "fiber": 3}}})
+        self.assertEqual(self.raw_foods()["foods"][fid]["barcode"], "8001234567890")
 
     def test_catalog_of_the_previous_version_must_be_imported_again(self):
         self.cat.mkdir(parents=True, exist_ok=True)
@@ -425,7 +448,7 @@ class UnknownFieldsKept(Base):
 
     def test_known_field_removed_is_removed(self):
         self.h.save_food({"food": {"name": "Pane", "per100": {"protein": 8, "carbs": 50, "fat": 1, "fiber": 3},
-                                   "barcode": "8001234567890"}})
+                                   "barcode": "8001234567897"}})
         fid = next(k for k, f in self.raw_foods()["foods"].items() if f.get("name") == "Pane")
         self.h.save_food({"food": {"id": fid, "name": "Pane", "per100": {"protein": 8, "carbs": 50, "fat": 1, "fiber": 3},
                                    "barcode": ""}})
@@ -435,6 +458,99 @@ class UnknownFieldsKept(Base):
         self.h.save_food({"delete": "f2"})
         raw = self.untouched("f2")
         self.assertNotIn("f2", raw["foods"])
+
+
+class SaveToMyFoods(Base):
+    """"Save also to my foods" when adding a community product, one food per product code, Recent in Add."""
+
+    def add(self, **body):
+        return self.h.diary_op({"date": self.h.now().date().isoformat(), "op": "add", "meal": "lunch", **body})
+
+    def day_entries(self):
+        return self.h.diary_days(self.h.now().date(), self.h.now().date())[self.h.now().date().isoformat()]["entries"]
+
+    def mine(self):
+        return {k: f for k, f in self.raw_foods()["foods"].items() if f.get("name")}
+
+    def test_adding_with_the_box_makes_the_copy_once(self):
+        self.h.catalog_install(self.off1)
+        before = set(self.mine())
+        self.add(catalog={"src": "off", "ref": "8001234567897"}, g=30, save=True, lang="it")
+        (fid,) = set(self.mine()) - before
+        f = self.mine()[fid]
+        self.assertEqual((f["name"], f["barcode"], f["origin"]["src"], f["origin"]["ref"]),
+                         ("Biscotti integrali (Marca)", "8001234567897", "off", "8001234567897"))
+        self.assertEqual(f["per100"]["protein"], 7.5)
+        (e,) = self.day_entries()
+        self.assertEqual((e["food"], e["g"]), (fid, 30))  # the entry is of my food, as after "Save to my foods"
+        # the same product again, with the box: the copy already there, no second one
+        self.add(catalog={"src": "off", "ref": "8001234567897"}, g=20, save=True, lang="it")
+        self.assertEqual(set(self.mine()) - before, {fid})
+        self.assertEqual([x["food"] for x in self.day_entries()], [fid, fid])
+        # without the box: only the diary copy, as before
+        self.add(catalog={"src": "off", "ref": "8001234567897"}, g=10, lang="it")
+        self.assertEqual(set(self.mine()) - before, {fid})
+        self.assertIsNone(self.day_entries()[-1]["food"])
+
+    def test_my_food_with_the_same_code_in_another_form_is_used(self):
+        self.h.catalog_install(self.off1)
+        # my food with the UPC-A form of the catalog's EAN-13 0012345678905
+        mine = self.h.save_food({"food": {"name": "My apple snack", "barcode": "012345678905",
+                                          "per100": {"protein": 1, "carbs": 80, "fat": 1, "fiber": 2}}})["id"]
+        before = set(self.mine())
+        self.add(catalog={"src": "off", "ref": "0012345678905"}, g=25, save=True, lang="it")
+        self.assertEqual(set(self.mine()), before)
+        self.assertEqual(self.day_entries()[-1]["food"], mine)
+
+    def test_no_second_food_with_the_same_code(self):
+        self.h.save_food({"food": {"name": "Apple snack", "barcode": "012345678905",
+                                   "per100": {"protein": 1, "carbs": 80, "fat": 1, "fiber": 2}}})
+        self.h.save_food({"food": {"name": "Bisfrolla", "barcode": "20570910",
+                                   "per100": {"protein": 7, "carbs": 58.6, "fat": 26.4, "fiber": 2}}})
+        for name, code in (("Apple snack 2", "0012345678905"), ("Apple snack 3", "00012345678905"),
+                           ("Apple snack 4", "012345678905"), ("Bisfrolla 2", "0000020570910"), ("Bisfrolla 3", "20570910")):
+            with self.assertRaises(self.h.UserError) as e:
+                self.h.save_food({"food": {"name": name, "barcode": code,
+                                           "per100": {"protein": 1, "carbs": 80, "fat": 1, "fiber": 2}}})
+            self.assertEqual(e.exception.msg["$"], "e.barcode_exists", code)
+        # editing the food that has the code keeps it
+        fid = next(k for k, f in self.mine().items() if f["name"] == "Apple snack")
+        self.h.save_food({"food": {"id": fid, "name": "Apple snack, green", "barcode": "0012345678905",
+                                   "per100": {"protein": 1, "carbs": 80, "fat": 1, "fiber": 2}}})
+        self.assertEqual(self.mine()[fid]["barcode"], "0012345678905")
+
+    def test_copy_with_a_name_already_taken(self):
+        self.h.catalog_install(self.off1)
+        self.h.save_food({"food": {"name": "Biscotti integrali (Marca)", "per100": {"protein": 7, "carbs": 60, "fat": 10, "fiber": 6}}})
+        self.add(catalog={"src": "off", "ref": "8001234567897"}, g=30, save=True, lang="it")
+        names = sorted(f["name"] for f in self.mine().values())
+        self.assertIn("Biscotti integrali (Marca) (2)", names)
+
+    def test_recent_and_uses(self):
+        day = self.h.now().date().isoformat()
+        t = [1000]
+
+        def op(**body):
+            t[0] += 10
+            with mock.patch.object(self.h.time, "time", return_value=t[0]):
+                self.h.diary_op({"date": day, "meal": "lunch", **body})
+
+        op(op="add", food="f1", g=40)
+        op(op="add_meal", template="m1")       # f1 and r1, once as the saved meal
+        op(op="add", food="r1", g=100)
+        op(op="add", food="f1", g=30)
+        r = self.h.foods_payload()
+        self.assertEqual(r["recent"], [{"kind": "food", "id": "f1"}, {"kind": "food", "id": "r1"}, {"kind": "meal", "id": "m1"}])
+        self.assertEqual(r["uses"], {"f1": 2, "m1": 1, "r1": 1})
+        # at most 10, latest first, only what still exists
+        for i in range(12):
+            fid = self.h.save_food({"food": {"name": f"Food {i}", "per100": {"protein": 1, "carbs": 1, "fat": 1, "fiber": 1}}})["id"]
+            op(op="add", food=fid, g=10)
+        r = self.h.foods_payload()
+        self.assertEqual(len(r["recent"]), 10)
+        names = {f["id"]: f["name"] for f in r["foods"]}
+        self.assertEqual(names[r["recent"][0]["id"]], "Food 11")
+        self.assertEqual(names[r["recent"][9]["id"]], "Food 2")
 
 
 class NoNetwork(Base):
@@ -451,10 +567,10 @@ class NoNetwork(Base):
                 mock.patch.object(socket, "create_connection", refuse), \
                 mock.patch.object(socket, "getaddrinfo", refuse), \
                 mock.patch.object(urllib.request, "urlopen", refuse):
-            for q in ("mela", "bisc", "caffe esp", "marca", "oats", "8001234567890"):
+            for q in ("mela", "bisc", "caffe esp", "marca", "oats", "8001234567897"):
                 self.h.catalog_search(q, "it")
                 self.h.catalog_search(q, "en")
-            self.h.catalog_barcode("8001234567890")
+            self.h.catalog_barcode("8001234567897")
             self.h.catalog_barcode("012345678905")
             self.h.catalog_info()
             it = self.h.catalog_search("biscotti", "it")["community"][0]
@@ -556,6 +672,8 @@ class Api(Base):
         self.assertEqual(r["community"][0]["name"], "Mela")
         st, r = self.request("GET", "/api/catalog/barcode?code=abc")
         self.assertEqual((st, r["error"]["$"]), (400, "e.barcode_invalid"))
+        st, r = self.request("GET", "/api/catalog/barcode?code=8001234567890")
+        self.assertEqual((st, r["error"]), (400, {"$": "e.barcode_check", "code": "8001234567890"}))
         st, r = self.request("GET", "/api/catalog/info")
         self.assertEqual(set(r["installed"]), {"generic"})
         self.assertEqual(r["sources"]["off"]["license"], "ODbL 1.0")

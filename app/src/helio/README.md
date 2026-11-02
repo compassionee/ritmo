@@ -159,8 +159,29 @@ page's server).
   speed measures it on the phone.
 - **Barcodes**: stored and looked up as GTIN-14 (`gtin_key`): EAN-8, UPC-A, EAN-13 and GTIN-14 with or
   without leading zeros are the same code. Products of Open Food Facts that share a code are merged when
-  they are the same product; different products with the same code are all kept, and the scanner lists them
-  with name, brand and country to choose; a single product opens its details before it is added.
+  they are the same product; different products with the same code are all kept and listed with name,
+  brand and country to choose. Codes from the user (typed or scanned) must have the right GS1 check digit
+  (`clean_barcode`, error `e.barcode_check`); codes already stored and catalog data keep the format check only.
+- **Scanner** (`HelioScanActivity`): CameraX frames at 1280x720 (closest size otherwise), turned upright,
+  the central band under the red guide line first, then the whole frame and the frame turned by 90 degrees.
+  `HelioBarcodeDecoder` keeps a ZXing read only with the check digit, light quiet zones (wider for EAN-8 and
+  UPC-E), contrast all along the code (a glare can change digits with a valid check digit), the same code on
+  the rows above and below and, for EAN-8 and UPC-E, the proportions of a real code (start guard against the
+  whole length, tolerant: photos at a slant); UPC-E of number system 0 only, given back as UPC-A.
+  `HelioScanConfirm` wants the same code 3 times in a row (4 for EAN-8 and UPC-E); empty frames in between
+  do not count, another code or 4 seconds without reads start again. Torch button when the camera has
+  a flash. A scanned code of one of the user's foods opens it at once; otherwise the page shows the number
+  read, editable, with "Scan again". `HelioBarcodeRobustnessTest` spoils generated codes (blur, noise,
+  rotation, perspective, glare, framed by half) and checks that no wrong code is accepted; `HelioScanStats`
+  keeps in memory how the scans went (Profile > About > Startup times). The first version also compared
+  every module with the bars of the digits read: on a phone it dropped almost every real read.
+- **Save also to my foods**: a box in the details of a community product, remembered in `settings.json`
+  (`save_mine`, exported and imported); adding with it makes the copy as "Save to my foods" does, or uses
+  the user's food with the same product code (`mine_by_code`, any form of the code) or the copy already
+  made. One food per product code: a second one is refused (`e.barcode_exists`).
+- **Add panel**: Recent on top (the last 10 foods, recipes or saved meals used in the diary, from the
+  entries' `added` time; entries of a saved meal carry `tpl`), then saved meals and foods by use
+  (`food_usage`, last 13 months of the diary).
 - **The user's data is never touched**: installing, updating or removing a catalog only writes in its own
   folder (`foods.json` stays identical byte for byte, tested); a community food enters the user's foods
   only with "Save to my foods", as a new copy that keeps its origin (each value shows its source: the

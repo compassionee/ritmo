@@ -580,6 +580,11 @@
     <div class="row"><h3 id="pickTitle" data-i18n="common.add"></h3><button class="sheet-x" id="pickClose" data-i18n-attr="aria-label:common.close">×</button></div>
     <input class="search" id="pickSearch" type="search" autocomplete="off" data-i18n-attr="placeholder:ui.pickSheet.search_food_recipe_or;aria-label:common.search">
     <button class="w-btn ghost" id="pickScan" data-i18n="cat.scan" hidden></button>
+    <div id="pickScanned" class="scanned" hidden>
+      <label for="scanCode" data-i18n="cat.scanned"></label>
+      <div class="row"><input class="scan-code" id="scanCode" inputmode="numeric" autocomplete="off"><button class="w-btn ghost" id="scanAgain" data-i18n="cat.scan_again"></button></div>
+      <small data-i18n="cat.scanned_hint"></small>
+    </div>
     <div id="pickList" class="pick-list"></div>
     <div id="pickCat" class="pick-list" aria-live="polite"></div>
     <div class="export-btns"><button class="add-btn small" id="pickNewFood"><span>+</span> <span data-i18n="food.new"></span></button><button class="add-btn small" id="pickNewRecipe"><span>+</span> <span data-i18n="recipe.new"></span></button></div>
@@ -594,6 +599,7 @@
     <label class="sheet-row"><span data-i18n="ui.entrySheet.grams"></span><input id="entryG" type="number" inputmode="decimal" min="0.1" max="5000" step="1"></label>
     <div class="chips wrap" id="entryPortions"></div>
     <div class="sheet-row col"><span data-i18n="ui.entrySheet.meal"></span><div class="chips wrap" id="entryMeals"></div></div>
+    <label class="check-row" id="entryKeepRow" hidden><input type="checkbox" id="entryKeep"> <span data-i18n="cat.save_also"></span></label>
     <p class="muted" id="entryPreview"></p>
     <p class="error" id="entryErr" hidden></p>
     <div class="sheet-actions"><button class="w-btn ghost" id="entryRemove" data-i18n="common.remove"></button><button class="w-btn ghost" id="entrySaveMine" data-i18n="cat.save_mine" hidden></button><button class="w-btn" id="entrySave" data-i18n="common.add"></button></div>

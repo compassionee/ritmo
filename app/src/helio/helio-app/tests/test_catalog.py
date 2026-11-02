@@ -50,7 +50,7 @@ def sample_generic():
 
 
 def sample_off():
-    return [row("off", "8001234567890", "Biscotti integrali", brand="Marca", barcode="8001234567890", protein=7.5,
+    return [row("off", "8001234567897", "Biscotti integrali", brand="Marca", barcode="8001234567897", protein=7.5,
                 carbs=65, fat=18, fiber=8, sat=2.1, salt=0.5, portions=[["4 biscotti (30 g)", 30]]),
             row("off", "0012345678905", "Mela snack", barcode="0012345678905", protein=1, carbs=80, fat=1),
             row("off", "123", "Internal code", protein=5, carbs=5, fat=5),
@@ -187,16 +187,71 @@ class Values(unittest.TestCase):
                          {"00000020570910"})
         # UPC-A and the same code as EAN-13 and GTIN-14
         self.assertEqual({hc.gtin_key(c) for c in ("012345678905", "0012345678905", "00012345678905")}, {"00012345678905"})
-        self.assertEqual(hc.gtin_key("8001234567890"), "08001234567890")
+        self.assertEqual(hc.gtin_key("8001234567897"), "08001234567897")
         self.assertEqual(hc.gtin_key("18001234567897"), "18001234567897")  # GTIN-14 with an indicator digit
         for bad in ("1234567", "123456789012345", "abc", "", None, "8001-234"):
             self.assertIsNone(hc.gtin_key(bad), bad)
         self.assertEqual(hc.gtin_display("00000020570910"), "20570910")
-        self.assertEqual(hc.gtin_display("08001234567890"), "8001234567890")
+        self.assertEqual(hc.gtin_display("08001234567897"), "8001234567897")
         self.assertEqual(hc.gtin_display("18001234567897"), "18001234567897")
 
+    # real codes: EAN-13 (Nutella, the Stabilo code of the GS1 examples, products in the fixture countries), UPC-A,
+    # EAN-8 and GTIN-14
+    REAL_CODES = ("3017620422003", "4006381333931", "5000159459228", "7613035974685", "5411188112709", "5901234123457",
+                  "8001234567897", "036000291452", "012345678905", "96385074", "73513537", "20570910", "18001234567894")
+
+    def test_check_digit_of_real_codes(self):
+        for code in self.REAL_CODES:
+            self.assertTrue(hc.gs1_check_ok(code), code)
+            self.assertIsNone(hc.barcode_problem(code), code)
+            self.assertEqual(hc.clean_barcode(code), code)
+        self.assertEqual(hc.clean_barcode(" 4006381 333931 "), "4006381333931")  # typed with spaces
+
+    def test_one_wrong_digit_is_always_caught(self):
+        for code in self.REAL_CODES:
+            for i in range(len(code)):
+                for d in "0123456789":
+                    if d == code[i]:
+                        continue
+                    wrong = code[:i] + d + code[i + 1:]
+                    self.assertFalse(hc.gs1_check_ok(wrong), wrong)
+                    self.assertEqual(hc.barcode_problem(wrong), "check", wrong)
+                    self.assertIsNone(hc.clean_barcode(wrong), wrong)
+
+    def test_two_neighbouring_digits_swapped(self):
+        """Caught unless the two digits differ by exactly 5 (3a + b and a + 3b then agree modulo 10): a limit of
+        the GS1 check digit itself, which is why the scanner also wants the same code in more than one frame."""
+        caught = missed = 0
+        for code in self.REAL_CODES:
+            for i in range(len(code) - 1):
+                a, b = code[i], code[i + 1]
+                if a == b:
+                    continue
+                swapped = code[:i] + b + a + code[i + 2:]
+                if abs(int(a) - int(b)) == 5:
+                    self.assertTrue(hc.gs1_check_ok(swapped), swapped)
+                    missed += 1
+                else:
+                    self.assertEqual(hc.barcode_problem(swapped), "check", swapped)
+                    self.assertIsNone(hc.clean_barcode(swapped), swapped)
+                    caught += 1
+        self.assertGreater(caught, 100)
+        self.assertLess(missed, caught / 5)
+        # examples written out: Nutella with its 4th and 5th digits swapped, Stabilo with the last two swapped
+        self.assertIsNone(hc.clean_barcode("3016720422003"))
+        self.assertIsNone(hc.clean_barcode("4006381333913"))
+
+    def test_barcode_problem(self):
+        for bad in ("1234567", "123456789012345", "abc", "", None, "8001-234", "80012345678ab"):
+            self.assertEqual(hc.barcode_problem(bad), "format", bad)
+            self.assertIsNone(hc.clean_barcode(bad), bad)
+        self.assertEqual(hc.barcode_problem("8001234567890"), "check")
+        # stored and catalog codes keep only the format check
+        self.assertEqual(hc.barcode_digits("8001234567890"), "8001234567890")
+        self.assertEqual(hc.gtin_key("8001234567890"), "08001234567890")
+
     def test_gs1_country(self):
-        for code, country in (("8001234567890", "it"), ("3017620422003", "fr"), ("4008400402222", "de"),
+        for code, country in (("8001234567897", "it"), ("3017620422003", "fr"), ("4008400402222", "de"),
                               ("5000159459228", "gb"), ("7613035974685", "ch"), ("5411188112709", "be"),
                               ("9001234567893", "at"), ("80012345", "it"), ("5901234123457", "pl")):
             self.assertEqual(hc.gs1_country(hc.gtin_key(code)), country, code)
@@ -396,7 +451,7 @@ class Search(unittest.TestCase):
     def test_item(self):
         it = hc.search(self.cat, "biscotti", "it")[0]
         self.assertEqual((it["cat"], it["src"], it["ref"], it["brand"], it["version"]),
-                         ("off", "off", "8001234567890", "Marca", "2026-10-21"))
+                         ("off", "off", "8001234567897", "Marca", "2026-10-21"))
         self.assertEqual(it["portions"], [["4 biscotti (30 g)", 30]])
         self.assertEqual(it["missing"], [])
         sea = hc.get(self.cat, "usda_sr", "175142", "it")
@@ -408,15 +463,15 @@ class Search(unittest.TestCase):
 
     def test_barcode_in_every_form(self):
         refs = lambda code: sorted(x["ref"] for x in hc.by_barcode(self.cat, code))
-        self.assertEqual(refs("8001234567890"), ["8001234567890"])
-        self.assertEqual(refs("08001234567890"), ["8001234567890"])           # GTIN-14 with the leading zero
+        self.assertEqual(refs("8001234567897"), ["8001234567897"])
+        self.assertEqual(refs("08001234567897"), ["8001234567897"])           # GTIN-14 with the leading zero
         for upc in ("012345678905", "0012345678905", "00012345678905"):     # UPC-A <-> EAN-13 <-> GTIN-14
             self.assertEqual(refs(upc), ["0012345678905"], upc)
         # EAN-8 written with and without zeros: both products that use the code, nothing merged
         for ean8 in ("20570910", "0000020570910", "00000020570910"):
             self.assertEqual(refs(ean8), ["0000020570910", "20570910"], ean8)
         self.assertEqual(refs("123"), [])
-        self.assertEqual(refs("4000000000000"), [])
+        self.assertEqual(refs("4000000000006"), [])
 
     def test_barcode_item(self):
         (it,) = [x for x in hc.by_barcode(self.cat, "20570910") if x["ref"] == "20570910"]
@@ -461,26 +516,26 @@ class OffRecords(unittest.TestCase):
         self.assertIsNone(b.off_record(parquet_row("1234567890128", ["en:serbia", "en:turkey"])))
 
     def test_no_country_but_european_gs1_prefix(self):
-        self.assertEqual(b.off_record(parquet_row("8001234567890"))["countries"], ["~it"])
+        self.assertEqual(b.off_record(parquet_row("8001234567897"))["countries"], ["~it"])
         self.assertEqual(b.off_record(parquet_row("4008400402222"))["countries"], ["~de"])
         for code in ("0012345678905", "6901234567892", "20570910", "123"):
             self.assertIsNone(b.off_record(parquet_row(code)), code)  # UPC, China, store code without country
 
     def test_names_italian_then_english_then_original(self):
-        r = b.off_record(parquet_row("8001234567890", names={"main": "Kekse", "de": "Kekse", "en": "Biscuits",
+        r = b.off_record(parquet_row("8001234567897", names={"main": "Kekse", "de": "Kekse", "en": "Biscuits",
                                                               "it": "Biscotti"}, lang="de"))
         self.assertEqual((r["name_it"], r["name"]), ("Biscotti", "Biscuits"))
         self.assertEqual(r["aliases"], ["Kekse"])  # every other name is searched too
-        r = b.off_record(parquet_row("8001234567890", names={"main": "Kekse", "de": "Kekse"}, lang="de"))
+        r = b.off_record(parquet_row("8001234567897", names={"main": "Kekse", "de": "Kekse"}, lang="de"))
         self.assertEqual((r["name_it"], r["name"]), (None, "Kekse"))
-        self.assertIsNone(b.off_record(parquet_row("8001234567890", names={})))
+        self.assertIsNone(b.off_record(parquet_row("8001234567897", names={})))
 
     def test_values_and_plausibility(self):
-        r = b.off_record(parquet_row("8001234567890", fiber=0.0, salt=0.0))
+        r = b.off_record(parquet_row("8001234567897", fiber=0.0, salt=0.0))
         self.assertEqual((r["values"]["fiber"], r["values"]["salt"]), (0.0, 0.0))  # 0 is a value, not a missing one
-        self.assertIsNone(b.off_record(parquet_row("8001234567890", **{"energy-kcal": 1700.0})))  # kJ as kcal
-        self.assertIsNone(b.off_record(parquet_row("8001234567890", fat=None)))
-        self.assertEqual(b.off_record(parquet_row("8001234567890"))["portions"], [["30 g", 30.0]])
+        self.assertIsNone(b.off_record(parquet_row("8001234567897", **{"energy-kcal": 1700.0})))  # kJ as kcal
+        self.assertIsNone(b.off_record(parquet_row("8001234567897", fat=None)))
+        self.assertEqual(b.off_record(parquet_row("8001234567897"))["portions"], [["30 g", 30.0]])
 
     def rec(self, code, name, brand="Marca", **n):
         return b.off_record(parquet_row(code, ["en:italy"], {"main": name}, brand=brand, **n))
@@ -493,8 +548,8 @@ class OffRecords(unittest.TestCase):
         self.assertIn("Biscotti cacao", m["aliases"])  # the other name stays searchable
 
     def test_same_code_listed_twice(self):
-        a, c = self.rec("8001234567890", "Biscotti", fiber=2.0), self.rec("8001234567890", "Altro prodotto", brand="X")
-        self.assertEqual([r["ref"] for r in b.merge_same_code([a, c])], ["8001234567890"])
+        a, c = self.rec("8001234567897", "Biscotti", fiber=2.0), self.rec("8001234567897", "Altro prodotto", brand="X")
+        self.assertEqual([r["ref"] for r in b.merge_same_code([a, c])], ["8001234567897"])
 
     def test_same_code_different_products_are_kept(self):
         a = self.rec("20570910", "Bisfrolla con crema alle nocciole", brand="Confiserie Firenze")  # lang: it
