@@ -37,7 +37,7 @@ the phone. Every value comes with the published study or guideline it is compare
 - [Privacy](#-privacy)
 - [Building from source](#-building-from-source)
 - [Publishing a release](#-publishing-a-release)
-- [Translations](#translations) · [Licences](#licences)
+- [Translations](#translations) · [Licences](#licences) · [Changelog](CHANGELOG-RITMO.md) · [Security](SECURITY.md)
 
 ## ✨ Features
 
