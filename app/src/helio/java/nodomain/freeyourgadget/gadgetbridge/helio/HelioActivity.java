@@ -28,6 +28,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
+import android.provider.Settings;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.webkit.CookieManager;
@@ -70,6 +71,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -93,6 +95,10 @@ public class HelioActivity extends Activity {
     private static final int REQUEST_IMPORT = 3;
     private static final int REQUEST_CATALOG = 4;
     private static final int REQUEST_SCAN = 5;
+    private static final int REQUEST_BACKUP_FOLDER = 6;
+    private static final int REQUEST_NOTIFICATIONS = 7;
+    /** A due backup waits this long after Ritmo opens or comes back, so that the page's first answers come first. */
+    private static final long BACKUP_DELAY_MS = 5000;
     private static final int MENU_EXPORT = 1;
     private static final int MENU_IMPORT = 2;
     /** Same limit as helio_transfer.MAX_TOTAL. */
@@ -112,6 +118,7 @@ public class HelioActivity extends Activity {
     private WebView webView;
     private HelioPythonBackend backend;
     private HelioWebRouter router;
+    private HelioBackup backup;
     private String pendingCsvPath;
     @Nullable
     private Object backCallback;
@@ -140,7 +147,14 @@ public class HelioActivity extends Activity {
         backend = new HelioPythonBackend(this);
         // Python starts while the WebView is created and the page loads, instead of at the page's first request
         startPython();
-        router = new HelioWebRouter(backend, assetLoader, this::runGbAction, this::isGadgetbridgeRunning);
+        backup = new HelioBackup(getSharedPreferences(HelioBackup.PREFS, MODE_PRIVATE));
+        final Map<String, HelioWebRouter.StatusSource> javaStatus = new HashMap<>();
+        javaStatus.put(HelioWebRouter.BACKUP_PATH, () -> backup.status().toString());
+        javaStatus.put(HelioWebRouter.REMINDERS_PATH,
+                () -> HelioReminders.status(this, System.currentTimeMillis(), false).toString());
+        router = new HelioWebRouter(backend, assetLoader, this::runGbAction, this::isGadgetbridgeRunning, javaStatus);
+        // alarms are lost when Ritmo is stopped from Android's settings: set again at every opening
+        longWork.execute(() -> HelioReminders.schedule(this, System.currentTimeMillis()));
 
         blockServiceWorkers();
 
@@ -181,7 +195,7 @@ public class HelioActivity extends Activity {
                 saveDownload(Uri.parse(url), contentDisposition, mimeType));
 
         setContentView(webView);
-        String savedView = null;
+        String savedView = tabFromNotification(getIntent());
         if (savedInstanceState != null) {
             savedView = savedInstanceState.getString(STATE_VIEW);
             final String csvPath = savedInstanceState.getString(STATE_CSV_PATH);
@@ -283,6 +297,18 @@ public class HelioActivity extends Activity {
         }
         if (HelioGbActions.SCAN.equals(action)) {
             mainHandler.post(() -> startActivityForResult(new Intent(this, HelioScanActivity.class), REQUEST_SCAN));
+            return;
+        }
+        if (HelioGbActions.REMINDERS.equals(action)) {
+            mainHandler.post(this::remindersChanged);
+            return;
+        }
+        if (HelioGbActions.NOTIFICATION_SETTINGS.equals(action)) {
+            mainHandler.post(this::openNotificationSettings);
+            return;
+        }
+        if (action.startsWith("backup_")) {
+            backupAction(action);
             return;
         }
         mainHandler.post(() -> {
@@ -408,6 +434,12 @@ public class HelioActivity extends Activity {
             longWork.execute(() -> readForImport(uri));
         } else if (requestCode == REQUEST_CATALOG && uri != null) {
             longWork.execute(() -> importCatalog(uri));
+        } else if (requestCode == REQUEST_BACKUP_FOLDER) {
+            if (uri != null) {
+                backupFolderChosen(uri);
+            } else {
+                sendBackupStatus();
+            }
         } else if (requestCode == REQUEST_SCAN) {
             sendToPage("window.helioScanned && window.helioScanned(" + scanResult(resultCode, data) + ")");
         }
@@ -440,7 +472,7 @@ public class HelioActivity extends Activity {
             if (out == null) {
                 throw new IOException("no output stream");
             }
-            out.write(backend.exportState());
+            HelioBackup.writeArchive(out, backend::exportState);
             ok = true;
         } catch (final Exception e) {
             LOG.error("Helio export failed", e);
@@ -450,6 +482,155 @@ public class HelioActivity extends Activity {
         final boolean saved = ok;
         mainHandler.post(() -> Toast.makeText(this,
                 saved ? R.string.helio_exported : R.string.helio_export_failed, Toast.LENGTH_LONG).show());
+    }
+
+    /**
+     * The section a reminder's notification opens ({"tab": "food"} or {"tab": "profile"}), as a saved view; null
+     * otherwise.
+     */
+    @Nullable
+    static String tabFromNotification(@Nullable final Intent intent) {
+        final String tab = intent != null ? intent.getStringExtra(HelioReminders.EXTRA_TAB) : null;
+        return "food".equals(tab) || "profile".equals(tab) ? "{\"tab\":\"" + tab + "\"}" : null;
+    }
+
+    /**
+     * The page saved the reminders (settings.json): the notification permission is asked now, and only now, when a
+     * reminder is on and Android 13+ has not granted it; then the alarms are set again and the page told how it went.
+     */
+    void remindersChanged() {
+        final File stateDir = HelioPythonBackend.stateDir(this);
+        if (HelioReminders.anyOn(stateDir) && HelioReminders.PERM_ASK.equals(HelioReminders.permission(this))
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+            return;
+        }
+        remindersSet(false);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(final int requestCode, @NonNull final String[] permissions,
+                                           @NonNull final int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_NOTIFICATIONS) {
+            remindersSet(true);
+        }
+    }
+
+    /** asked: the permission dialog was just answered (a refusal turns the reminders off in the page). */
+    private void remindersSet(final boolean asked) {
+        final long now = System.currentTimeMillis();
+        HelioReminders.schedule(this, now);
+        if (HelioReminders.PERM_GRANTED.equals(HelioReminders.permission(this))) {
+            HelioReminders.createChannel(this, HelioReminders.lang(HelioPythonBackend.stateDir(this)));
+        }
+        sendToPage("window.helioReminders && window.helioReminders(" + HelioReminders.status(this, now, asked) + ")");
+    }
+
+    private void openNotificationSettings() {
+        final Intent intent = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+                : new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null));
+        try {
+            startActivity(intent);
+        } catch (final ActivityNotFoundException e) {
+            startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null)));
+        }
+    }
+
+    /** Automatic backup actions from the Profile (approved by the router). */
+    private void backupAction(@NonNull final String action) {
+        switch (action) {
+            case HelioGbActions.BACKUP_FOLDER:
+                mainHandler.post(() -> {
+                    final Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                            .addFlags(HelioBackupFolder.PERMISSION_FLAGS | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    try {
+                        startActivityForResult(intent, REQUEST_BACKUP_FOLDER);
+                    } catch (final ActivityNotFoundException e) {
+                        Toast.makeText(this, R.string.helio_backup_no_picker, Toast.LENGTH_LONG).show();
+                    }
+                });
+                return;
+            case HelioGbActions.BACKUP_NOW:
+                longWork.execute(() -> runBackup(true));
+                return;
+            case HelioGbActions.BACKUP_OFF:
+                releaseBackupFolder();
+                backup.clearFolder();
+                break;
+            case HelioGbActions.BACKUP_DAY:
+                backup.setEvery(HelioBackup.EVERY_DAY);
+                break;
+            case HelioGbActions.BACKUP_WEEK:
+                backup.setEvery(HelioBackup.EVERY_WEEK);
+                break;
+            case HelioGbActions.BACKUP_MONTH:
+                backup.setEvery(HelioBackup.EVERY_MONTH);
+                break;
+            default:
+                return;
+        }
+        sendBackupStatus();
+    }
+
+    /** The folder chosen in the picker: the permission is kept across restarts, then a first backup at once. */
+    private void backupFolderChosen(@NonNull final Uri tree) {
+        try {
+            getContentResolver().takePersistableUriPermission(tree, HelioBackupFolder.PERMISSION_FLAGS);
+        } catch (final SecurityException e) {
+            LOG.warn("Backup folder: no persistable permission", e);
+            Toast.makeText(this, R.string.helio_backup_folder_refused, Toast.LENGTH_LONG).show();
+            sendBackupStatus();
+            return;
+        }
+        final String old = backup.tree();
+        if (old != null && !old.equals(tree.toString())) {
+            releaseBackupFolder();
+        }
+        backup.setFolder(tree.toString(), HelioBackupFolder.displayName(getContentResolver(), tree));
+        longWork.execute(() -> runBackup(true));
+    }
+
+    private void releaseBackupFolder() {
+        final String tree = backup.tree();
+        if (tree == null) {
+            return;
+        }
+        try {
+            getContentResolver().releasePersistableUriPermission(Uri.parse(tree), HelioBackupFolder.PERMISSION_FLAGS);
+        } catch (final SecurityException e) {
+            // already revoked
+        }
+    }
+
+    /** A due backup, a few seconds after Ritmo opens or comes back to the foreground. */
+    private final Runnable backupIfDue = () -> {
+        if (backup != null && !isFinishing() && backup.due(System.currentTimeMillis()) && !backup.isRunning()) {
+            longWork.execute(() -> runBackup(false));
+        }
+    };
+
+    /** On the long operations' queue: never at the same time as an export or an import. */
+    void runBackup(final boolean manual) {
+        final String tree = backup.tree();
+        if (!manual && !backup.due(System.currentTimeMillis())) {
+            return;
+        }
+        final HelioTaskReporter progress = task("backup");
+        progress.report("run", 0, 0);
+        final HelioBackup.Folder folder = tree != null ? new HelioBackupFolder(getContentResolver(), Uri.parse(tree)) : null;
+        final String error = backup.run(folder, backend::exportState, System.currentTimeMillis());
+        progress.end(error == null);
+        sendBackupStatus();
+        if (error != null && !manual) {
+            // the Profile says why; the automatic backup must not fail unnoticed
+            mainHandler.post(() -> Toast.makeText(this, R.string.helio_backup_failed, Toast.LENGTH_LONG).show());
+        }
+    }
+
+    private void sendBackupStatus() {
+        sendToPage("window.helioBackup && window.helioBackup(" + backup.status() + ")");
     }
 
     private void readForImport(@NonNull final Uri source) {
@@ -646,10 +827,18 @@ public class HelioActivity extends Activity {
             webView.resumeTimers();
             webView.onResume();
         }
+        mainHandler.removeCallbacks(backupIfDue);
+        mainHandler.postDelayed(backupIfDue, BACKUP_DELAY_MS);
+        if (router != null) {
+            // back from Android's notification settings: the Profile shows the permission as it is now
+            sendToPage("window.helioReminders && window.helioReminders("
+                    + HelioReminders.status(this, System.currentTimeMillis(), false) + ")");
+        }
     }
 
     @Override
     protected void onPause() {
+        mainHandler.removeCallbacks(backupIfDue);
         // in the background nothing runs: no JavaScript timers (band polling, refresh), no layout
         if (webView != null) {
             webView.onPause();

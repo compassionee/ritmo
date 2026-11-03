@@ -427,6 +427,28 @@
       <div class="export-btns"><a class="w-btn ghost" id="expDays" download data-i18n="ui.profile.days"></a><a class="w-btn ghost" id="expTrain" download data-i18n="common.trainings"></a><a class="w-btn ghost" id="expStrength" download data-i18n="common.strength"></a><a class="w-btn ghost" id="expFood" download data-i18n="ui.profile.nutrition"></a></div>
       <details class="more" data-more="prof_export"><summary data-i18n="more.title"></summary><p class="note" data-i18n="ui.profile.file_created_by_ritmo"></p></details>
     </div>
+    <div class="card" id="backupCard" hidden>
+      <h3 class="card-title" data-i18n="backup.title"></h3>
+      <p class="judge" id="backupState"></p>
+      <p class="muted" id="backupInfo" hidden></p>
+      <p class="error" id="backupErr" hidden></p>
+      <label class="sheet-row"><span data-i18n="backup.every"></span><select id="backupEvery">
+        <option value="day" data-i18n="backup.every.day"></option><option value="week" data-i18n="backup.every.week"></option><option value="month" data-i18n="backup.every.month"></option></select></label>
+      <div class="export-btns"><button class="w-btn ghost" id="backupNow" data-i18n="backup.now"></button><button class="w-btn ghost" id="backupFolder" data-i18n="backup.choose"></button><button class="w-btn ghost" id="backupOff" data-i18n="backup.stop"></button></div>
+      <details class="more" data-more="prof_backup"><summary data-i18n="more.title"></summary><p class="note" data-i18n="backup.note"></p></details>
+    </div>
+    <div class="card" id="remindCard" hidden>
+      <h3 class="card-title" data-i18n="rem.title"></h3>
+      <label class="check-row"><input type="checkbox" id="remDayOn"> <span data-i18n="rem.day"></span></label>
+      <div class="sheet-row"><span data-i18n="rem.time"></span><input type="time" class="rem-time" id="remDayTime" value="21:30"></div>
+      <label class="check-row"><input type="checkbox" id="remWeighOn"> <span data-i18n="rem.weigh"></span></label>
+      <div class="sheet-row"><span data-i18n="rem.time"></span><input type="time" class="rem-time" id="remWeighTime" value="07:30"></div>
+      <div class="chips days7" id="remWeighDays"></div>
+      <p class="muted" id="remNext" hidden></p>
+      <p class="error" id="remErr" hidden></p>
+      <div class="export-btns"><button class="w-btn ghost" id="remAllow" hidden data-i18n="rem.allow"></button><button class="w-btn ghost" id="remSettings" hidden data-i18n="rem.settings"></button></div>
+      <details class="more" data-more="prof_remind"><summary data-i18n="more.title"></summary><p class="note" data-i18n="rem.note"></p></details>
+    </div>
     <div class="card">
       <div class="row"><h3 class="card-title" data-i18n="ui.profile.data_cleaning"></h3><small id="qualityDay"></small></div>
       <p class="muted" id="qualitySummary"></p>

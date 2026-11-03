@@ -381,6 +381,8 @@ body.noscroll { overflow: hidden; }
   color: var(--blue); font-weight: 600; font-size: 14px; text-align: left; }
 .add-btn span { font-size: 20px; line-height: 1; }
 .sheet-row .times { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+/* reminders: room for "07:30 AM" where the phone uses a 12-hour clock */
+.sheet-row input[type="time"].rem-time { width: 136px; }
 .sheet-row input[type="time"] { width: 104px; padding: 9px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2);
   color: var(--text); font: inherit; color-scheme: dark; }
 

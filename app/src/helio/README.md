@@ -101,6 +101,32 @@ permission, and data (band, catalog packages, archives) enters only from the ban
     `POST_LIMITS`, errors).
 - **Source links:** they open in the browser with an Intent, only on tap and only for `https`.
 - **CSV export:** the location is chosen with Android's file picker.
+- **Reminders** (Profile > Reminders, `HelioReminders`), off until the user turns one on: in the evening at a chosen
+  time "Mark the day as complete", only if today's diary is not marked; in the morning on chosen weekdays "Weigh
+  yourself", only if today has no weight. The rules are in `settings.json` (`reminders`, checked by
+  `helio_app.reminders_check`, exported with the data); Android's alarms (exact when allowed, otherwise within a few
+  minutes) start `HelioReminderReceiver` (not exported) in the :helio process, which reads the rules and the
+  conditions straight from `settings.json`, `diary-YYYY-MM.json` and `weights.json` without starting Python, sets
+  the next alarm and shows a local notification in the language chosen in the Profile; an alarm more than two hours
+  late is dropped. `HelioReminderBootReceiver` only sets the alarms again after a restart, an update, a clock or
+  time zone change; Ritmo also sets them at every opening (stopping the app from Android's settings removes them).
+  The notification permission (Android 13+) is asked only when the page saves a reminder turned on (action
+  `reminders`); a refusal turns the reminders off in the page, which says so and offers Android's notification
+  settings (`notif_settings`). `GET /api/android/reminders` (permission, next times) is answered by the router.
+  Tests: `HelioRemindersTest`, `tests/test_reminders.py`, `test_ui_reminders.py`.
+- **Automatic backup** (Profile > Automatic backup, `HelioBackup`): the user chooses a folder once with Android's
+  folder picker (`ACTION_OPEN_DOCUMENT_TREE`, persistent read and write permission); Ritmo then saves there the same
+  archive as "Export Ritmo data" (`export_state`, the same bytes: never the food catalog nor the day cache) as
+  `ritmo-backup-YYYYMMDD-HHMMSS.tgz`, every day, week (default) or month by the calendar, and keeps the last 5:
+  the rotation deletes only files named like its own backups, and only after the new one is written. Ritmo does no
+  background work, so a backup that is due starts 5 s after Ritmo opens or comes back to the foreground, on the long
+  operations' queue; the archive's data changes only while Ritmo is open, so nothing is left out. Settings and the
+  last outcome are in `shared_prefs/helio_backup.xml` (never exported; the folder's URI never reaches the page);
+  `GET /api/android/backup` is answered by the router, the actions (`backup_folder`, `backup_now`, `backup_off`,
+  `backup_day|week|month`) go through the bridge's approval, and the outcome comes back with `window.helioBackup`.
+  Errors for the page: folder gone (deleted, card removed, permission revoked), no space, write, export; after a
+  failed automatic backup the next try waits one hour and a toast says so. Tests: `HelioBackupTest` (rotation,
+  folder gone, revoked permission on a documents tree, byte-for-byte the manual export), `test_ui_backup.py`.
 - **Database:** Gadgetbridge's internal one, read-only, with `HELIO_DB_LIVE=1`:
   - no `immutable`, so data still in the WAL is visible too;
   - 5 s busy timeout;

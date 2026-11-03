@@ -512,18 +512,18 @@ class LanguageSwitch(unittest.TestCase):
             db = Path(tmp) / "gb.db"
             build_db(db)
             h = load_app(db, HELIO_STATE=str(Path(tmp) / "state"))
-            self.assertEqual(h.settings_load(), {"lang": None, "hints": [], "save_mine": False})  # default: system language
+            self.assertEqual(h.settings_load(), {"lang": None, "hints": [], "save_mine": False, "reminders": h.REMINDER_DEFAULTS})  # default: system language
             h.save_settings({"lang": "en"})
-            self.assertEqual(h.settings_load(), {"lang": "en", "hints": [], "save_mine": False})
+            self.assertEqual(h.settings_load(), {"lang": "en", "hints": [], "save_mine": False, "reminders": h.REMINDER_DEFAULTS})
             with self.assertRaises(h.UserError):
                 h.save_settings({"lang": "fr"})
             # a usage hint once used: only that field changes, the language stays
             h.save_settings({"hint": "day_complete"})
             h.save_settings({"hint": "day_complete"})
-            self.assertEqual(h.settings_load(), {"lang": "en", "hints": ["day_complete"], "save_mine": False})
+            self.assertEqual(h.settings_load(), {"lang": "en", "hints": ["day_complete"], "save_mine": False, "reminders": h.REMINDER_DEFAULTS})
             # "Save also to my foods" remembered: only that field changes
             h.save_settings({"save_mine": True})
-            self.assertEqual(h.settings_load(), {"lang": "en", "hints": ["day_complete"], "save_mine": True})
+            self.assertEqual(h.settings_load(), {"lang": "en", "hints": ["day_complete"], "save_mine": True, "reminders": h.REMINDER_DEFAULTS})
             for bad in ({"hint": "other"}, {}, {"save_mine": "yes"}, {"save_mine": None}):
                 with self.assertRaises(h.UserError):
                     h.save_settings(bad)

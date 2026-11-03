@@ -5118,23 +5118,61 @@ def parse_iso(v):
 
 
 HINTS = ("day_complete",)  # usage hints shown only until first used, then an (i) icon
+# local reminders of the Android app (HelioReminders reads them from settings.json): off until the user turns one on
+REMINDER_DEFAULTS = {"day": {"on": False, "time": "21:30"},
+                     "weigh": {"on": False, "time": "07:30", "days": [1, 2, 3, 4, 5, 6, 7]}}
+TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+
+
+def reminders_clean(raw):
+    """The reminders as saved, with the defaults for what is missing or invalid (days: ISO weekdays, 1 = Monday)."""
+    out = json.loads(json.dumps(REMINDER_DEFAULTS))
+    raw = raw if isinstance(raw, dict) else {}
+    for kind, rule in out.items():
+        r = raw.get(kind) if isinstance(raw.get(kind), dict) else {}
+        rule["on"] = r.get("on") is True
+        if isinstance(r.get("time"), str) and TIME_RE.match(r["time"]):
+            rule["time"] = r["time"]
+        if "days" in rule and isinstance(r.get("days"), list):
+            rule["days"] = sorted({d for d in r["days"] if isinstance(d, int) and not isinstance(d, bool) and 1 <= d <= 7})
+    return out
+
+
+def reminders_check(body):
+    """The reminders sent by the page: both rules, every field valid (nothing is fixed silently)."""
+    if not isinstance(body, dict) or set(body) != set(REMINDER_DEFAULTS):
+        raise UserError("e.value_invalid")
+    for kind, rule in body.items():
+        if not isinstance(rule, dict) or set(rule) != set(REMINDER_DEFAULTS[kind]):
+            raise UserError("e.value_invalid")
+        if not isinstance(rule["on"], bool) or not isinstance(rule["time"], str) or not TIME_RE.match(rule["time"]):
+            raise UserError("e.value_invalid")
+        if "days" in rule:
+            days = rule["days"]
+            if (not isinstance(days, list) or len(days) > 7 or len(set(days)) != len(days)
+                    or any(isinstance(d, bool) or not isinstance(d, int) or not 1 <= d <= 7 for d in days)):
+                raise UserError("e.value_invalid")
+            if rule["on"] and not days:
+                raise UserError("e.reminder_days")
+    return reminders_clean(body)
 
 
 def settings_load():
     """Interface settings (data folder, included in export and import).
     lang: "it", "en" or None = system language; hints: usage hints already used (shown as an icon from then on);
-    save_mine: "Save also to my foods" ticked."""
+    save_mine: "Save also to my foods" ticked; reminders: the app's local reminders (REMINDER_DEFAULTS)."""
     s = state_load("settings.json")
     hints = s.get("hints") if isinstance(s.get("hints"), list) else []
     return {"lang": s.get("lang") if s.get("lang") in LANGS else None, "hints": [x for x in HINTS if x in hints],
-            "save_mine": s.get("save_mine") is True}
+            "save_mine": s.get("save_mine") is True, "reminders": reminders_clean(s.get("reminders"))}
 
 
 def save_settings(body):
     """Only the fields sent change: "lang" (None = system language), "hint" (a usage hint now used), "save_mine"
-    (the box "Save also to my foods" of the community products, remembered)."""
-    if "lang" not in body and "hint" not in body and "save_mine" not in body:
+    (the box "Save also to my foods" of the community products, remembered), "reminders" (both rules)."""
+    if not {"lang", "hint", "save_mine", "reminders"} & set(body):
         raise UserError("e.value_invalid")
+    reminders = reminders_check(body["reminders"]) if "reminders" in body else None
     if "save_mine" in body and not isinstance(body["save_mine"], bool):
         raise UserError("e.value_invalid")
     lang = body.get("lang")
@@ -5150,6 +5188,8 @@ def save_settings(body):
             s["hints"] = [x for x in HINTS if x in (settings_load()["hints"] + [body["hint"]])]
         if "save_mine" in body:
             s["save_mine"] = body["save_mine"]
+        if reminders is not None:
+            s["reminders"] = reminders
         state_save("settings.json", s)
     return {"ok": True, **settings_load()}
 

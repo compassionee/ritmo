@@ -15,6 +15,8 @@
 - with --release: no android:debuggable;
 - the barcode scanner not exported, in the :helio process, without intent-filter;
 - the auth key field not exported, in the main process (where the device preferences are), without intent-filter;
+- the reminders: the alarm receiver not exported, without intent-filter; the receiver that sets the alarms again
+  only for restart, app update, clock and time zone; both in the :helio process;
 - no network: neither android.permission.INTERNET nor Gadgetbridge's Internet Helper permission (requests
   passed to that separate app);
 - the food catalog can work on the phone: the shipped package is in the assets, Chaquopy ships the native
@@ -35,6 +37,10 @@ PROVIDER = "nodomain.freeyourgadget.gadgetbridge.helio.HelioBandStateProvider"
 CONTROL_CENTER = "nodomain.freeyourgadget.gadgetbridge.activities.ControlCenterv2"
 SCANNER = "nodomain.freeyourgadget.gadgetbridge.helio.HelioScanActivity"
 AUTH_KEY = "nodomain.freeyourgadget.gadgetbridge.helio.HelioAuthKeyActivity"
+REMINDER = "nodomain.freeyourgadget.gadgetbridge.helio.HelioReminderReceiver"
+REMINDER_BOOT = "nodomain.freeyourgadget.gadgetbridge.helio.HelioReminderBootReceiver"
+REMINDER_BOOT_ACTIONS = {"android.intent.action.BOOT_COMPLETED", "android.intent.action.MY_PACKAGE_REPLACED",
+                         "android.intent.action.TIME_SET", "android.intent.action.TIMEZONE_CHANGED"}
 # permissions that would give the app network access (directly, or through the Internet Helper app)
 NETWORK_PERMISSIONS = ("android.permission.INTERNET", "nodomain.freeyourgadget.internethelper.INTERNET")
 CATALOG_ASSET = "assets/helio/catalog/generic.tar"
@@ -230,6 +236,27 @@ def check_dump(badging, xmltree, pkg, release, min_version_code=None, strings=No
         if any(c[0] == "intent-filter" for c in auth_key[2]):
             errors.append("HelioAuthKeyActivity has an intent-filter")
 
+    receivers = {r[1].get("name"): r for r in walk(tree, "receiver")}
+    reminder = receivers.get(REMINDER)
+    if reminder is None:
+        errors.append("HelioReminderReceiver missing")
+    else:
+        if is_true(reminder[1].get("exported", "")):
+            errors.append("HelioReminderReceiver is exported")
+        if reminder[1].get("process") != ":helio":
+            errors.append("HelioReminderReceiver is not in the :helio process")
+        if any(c[0] == "intent-filter" for c in reminder[2]):
+            errors.append("HelioReminderReceiver has an intent-filter")
+    boot = receivers.get(REMINDER_BOOT)
+    if boot is None:
+        errors.append("HelioReminderBootReceiver missing")
+    else:
+        if boot[1].get("process") != ":helio":
+            errors.append("HelioReminderBootReceiver is not in the :helio process")
+        boot_actions = {a[1].get("name") for a in walk(boot, "action")}
+        if boot_actions != REMINDER_BOOT_ACTIONS:
+            errors.append(f"HelioReminderBootReceiver actions: {sorted(boot_actions)}")
+
     requested = {u[1].get("name") for u in walk(tree, "uses-permission")}
     requested |= set(re.findall(r"uses-permission: name='([^']+)'", badging))
     for perm in NETWORK_PERMISSIONS:
@@ -278,7 +305,7 @@ def main(argv):
         for e in errors:
             print("ERROR:", e)
         return 1
-    print(f"OK: {pkg}, a single launcher activity ({launchers[0]}), stays in recents, actions, band status and auth key not exported, no network permission"
+    print(f"OK: {pkg}, a single launcher activity ({launchers[0]}), stays in recents, actions, band status, auth key and reminder alarm not exported, no network permission"
           + (", not debuggable" if "--release" in argv[2:] else ""))
     return 0
 

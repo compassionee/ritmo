@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -70,6 +71,10 @@ public class HelioWebRouter {
     static final String ACTION_HEADER = "X-Helio-Action";
     /** Set here, never taken from the page: is the main Gadgetbridge process running? */
     static final String GB_PROCESS_HEADER = "X-Helio-Gb-Process";
+    /** Automatic backup status (HelioBackup), answered here: Python is not involved. */
+    static final String BACKUP_PATH = "/api/android/backup";
+    /** Reminders: notification permission and next times (HelioReminders), answered here too. */
+    static final String REMINDERS_PATH = "/api/android/reminders";
 
     private static final Pattern MESSAGE_ID = Pattern.compile("^\\{\"id\":(\\d{1,9})[,}]");
     /** Bridge message with the page's view (section, day, scroll), kept for a process restart. */
@@ -93,15 +98,30 @@ public class HelioWebRouter {
     private final WebViewAssetLoader assetLoader;
     private final HelioGbActions actions;
     private final HelioGbActions.ProcessProbe processProbe;
+    /** Paths answered by Java (HelioBackup, HelioReminders), never by Python. */
+    private final Map<String, StatusSource> javaStatus;
     /** Last view sent by the page, already checked (JSON), or null. */
     private volatile String view;
 
     public HelioWebRouter(@NonNull final HelioBackend backend, @NonNull final WebViewAssetLoader assetLoader,
                           @NonNull final HelioGbActions actions, @NonNull final HelioGbActions.ProcessProbe processProbe) {
+        this(backend, assetLoader, actions, processProbe, Collections.emptyMap());
+    }
+
+    public HelioWebRouter(@NonNull final HelioBackend backend, @NonNull final WebViewAssetLoader assetLoader,
+                          @NonNull final HelioGbActions actions, @NonNull final HelioGbActions.ProcessProbe processProbe,
+                          @NonNull final Map<String, StatusSource> javaStatus) {
         this.backend = backend;
         this.assetLoader = assetLoader;
         this.actions = actions;
         this.processProbe = processProbe;
+        this.javaStatus = javaStatus;
+    }
+
+    /** A status kept by Java, as JSON (automatic backup, reminders). */
+    public interface StatusSource {
+        @NonNull
+        String json();
     }
 
     public static boolean isAppUrl(@Nullable final Uri uri) {
@@ -145,6 +165,12 @@ public class HelioWebRouter {
                 return toWebResponse(new HelioResponse(200, "OK",
                         Collections.singletonList(new String[]{"Content-Type", "application/json"}),
                         HelioStartup.json().getBytes(StandardCharsets.UTF_8)));
+            }
+            final StatusSource status = javaStatus.get(path);
+            if (status != null) {
+                return toWebResponse(new HelioResponse(200, "OK", Arrays.asList(
+                        new String[]{"Content-Type", "application/json"}, new String[]{"Cache-Control", "no-store"}),
+                        status.json().getBytes(StandardCharsets.UTF_8)));
             }
             final String query = url.getEncodedQuery();
             final long start = HelioStartup.now();

@@ -238,6 +238,35 @@ public class HelioWebRouterTest {
     }
 
     @Test
+    public void backupStatusIsAnsweredWithoutPython() throws Exception {
+        final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
+                .setDomain(HelioWebRouter.HOST)
+                .addPathHandler("/", new HelioStaticPathHandler(HelioWebRouterTest::openAsset))
+                .build();
+        final Map<String, HelioWebRouter.StatusSource> status = new HashMap<>();
+        status.put(HelioWebRouter.BACKUP_PATH, () -> "{\"on\":true,\"every\":\"week\"}");
+        status.put(HelioWebRouter.REMINDERS_PATH, () -> "{\"permission\":\"ask\"}");
+        final HelioWebRouter withBackup = new HelioWebRouter(backend, loader, actionsRun::add, () -> gbRunning, status);
+        final WebResourceResponse r = withBackup.intercept(Uri.parse(HelioWebRouter.ORIGIN + HelioWebRouter.BACKUP_PATH),
+                "GET", new HashMap<>());
+        assertTrue(backend.calls.isEmpty());
+        assertEquals(200, r.getStatusCode());
+        assertEquals("application/json", r.getMimeType());
+        assertEquals("week", new JSONObject(bodyOf(r)).getString("every"));
+        final WebResourceResponse rem = withBackup.intercept(Uri.parse(HelioWebRouter.ORIGIN + HelioWebRouter.REMINDERS_PATH),
+                "GET", new HashMap<>());
+        assertEquals("ask", new JSONObject(bodyOf(rem)).getString("permission"));
+        assertTrue(backend.calls.isEmpty());
+        // the backup actions go through the Python side's approval like the others
+        backend.approvedAction = HelioGbActions.BACKUP_NOW;
+        withBackup.handleBridgeMessage(actionMessage(4, HelioGbActions.BACKUP_NOW), APP_ORIGIN, true);
+        assertEquals(Collections.singletonList(HelioGbActions.BACKUP_NOW), actionsRun);
+        // a POST to the status path does nothing
+        assertEquals(405, withBackup.intercept(Uri.parse(HelioWebRouter.ORIGIN + HelioWebRouter.BACKUP_PATH), "POST", null)
+                .getStatusCode());
+    }
+
+    @Test
     public void apiPostCannotBeIntercepted() {
         final WebResourceResponse r = router.intercept(Uri.parse(HelioWebRouter.ORIGIN + "/api/weight"), "POST", null);
         assertEquals(405, r.getStatusCode());

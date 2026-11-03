@@ -8,6 +8,7 @@ port, same checks and same answers (X-Helio, Content-Type, size limits, CSP).
     GET  /api/android/band     band status written by Gadgetbridge (read-only)
     POST /api/android/action   checks an action for Gadgetbridge; Java runs it only if
                                this answer approves it (X-Helio-Action header)
+GET /api/android/startup and /api/android/backup are answered by Java, without Python.
 
 The "pull" action (pull down to sync) becomes "sync" only if no sync is already
 running and the last one, or the last one requested by Helio, is at least 30 s old:
@@ -37,7 +38,11 @@ SERVER_ONLY_ENV = ("HELIO_BIND", "HELIO_PORT", "HELIO_TLS_BIND", "HELIO_TLS_PORT
                    "HELIO_TLS_KEY", "HELIO_USER", "HELIO_PASSWORD", "HELIO_LAN_OPEN", "HELIO_REMEMBER_DAYS")
 
 # actions the page can ask of Gadgetbridge (HelioGbActionActivity runs them)
-ANDROID_ACTIONS = ("sync", "settings", "charts", "data", "gadgetbridge", "catalog_import", "scan", "authkey")
+ANDROID_ACTIONS = ("sync", "settings", "charts", "data", "gadgetbridge", "catalog_import", "scan", "authkey",
+                   # automatic backup (HelioBackup): folder picker, now, stop, how often
+                   "backup_folder", "backup_now", "backup_off", "backup_day", "backup_week", "backup_month",
+                   # local reminders (HelioReminders): alarms set again after a change, Android's notification settings
+                   "reminders", "notif_settings")
 # pull down: a sync only when needed
 PULL_ACTION = "pull"
 SYNC_COOLDOWN = 30  # seconds

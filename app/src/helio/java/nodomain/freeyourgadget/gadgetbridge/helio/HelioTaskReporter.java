@@ -38,7 +38,7 @@ public final class HelioTaskReporter implements HelioProgress {
     }
 
     static final long MIN_INTERVAL_MS = 250;
-    static final List<String> TASKS = Arrays.asList("catalog_import", "export", "import", "csv");
+    static final List<String> TASKS = Arrays.asList("catalog_import", "export", "import", "csv", "backup");
     static final List<String> PHASES = Arrays.asList("start", "copy", "unpack", "check", "run");
 
     /** Milliseconds, for the spacing only (SystemClock.uptimeMillis in the app). */

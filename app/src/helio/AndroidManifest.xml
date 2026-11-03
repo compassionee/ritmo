@@ -63,6 +63,24 @@
             android:process=":helio"
             android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
 
+        <!-- Local reminders (HelioReminders), in Helio's process without starting Python: the alarm, not exported
+             (only Ritmo's own PendingIntent reaches it), and the restart, update, clock and time zone broadcasts, which
+             only set the alarms again (check_apk.py checks both) -->
+        <receiver
+            android:name="nodomain.freeyourgadget.gadgetbridge.helio.HelioReminderReceiver"
+            android:exported="false"
+            android:process=":helio" />
+        <receiver
+            android:name="nodomain.freeyourgadget.gadgetbridge.helio.HelioReminderBootReceiver"
+            android:exported="true"
+            android:process=":helio">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <!-- Records the band state for Helio, at the start of the main process (no data) -->
         <provider
             android:name="nodomain.freeyourgadget.gadgetbridge.helio.HelioBandStateProvider"

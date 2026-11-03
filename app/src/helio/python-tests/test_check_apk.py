@@ -60,7 +60,8 @@ class Recents(unittest.TestCase):
 
 
 def full_dump(pkg, pebble="@0x7f120001", band=None, permission=None, version_code=257, scanner=(":helio", "false"),
-              auth_key=(None, "false"), uses=("android.permission.BLUETOOTH_CONNECT",)):
+              auth_key=(None, "false"), uses=("android.permission.BLUETOOTH_CONNECT",),
+              reminder=(":helio", "false", None), boot=(":helio", tuple(sorted(check_apk.REMINDER_BOOT_ACTIONS)))):
     """Minimal but complete badging and xmltree for check_dump."""
     band = band or f"{pkg}.helio_band_state"
     permission = permission or f"{pkg}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
@@ -94,6 +95,18 @@ def full_dump(pkg, pebble="@0x7f120001", band=None, permission=None, version_cod
         if len(auth_key) > 2:
             lines += ["        E: intent-filter (line=6)", "          E: action (line=7)",
                       f'            A: {ANDROID}:name(0x01010003)="{auth_key[2]}" (Raw: "x")']
+    if reminder:
+        lines += ["      E: receiver (line=9)", attr("name", "0x01010003", check_apk.REMINDER),
+                  attr("process", "0x01010011", reminder[0]), attr("exported", "0x01010010", reminder[1])]
+        if reminder[2]:
+            lines += ["        E: intent-filter (line=6)", "          E: action (line=7)",
+                      f'            A: {ANDROID}:name(0x01010003)="{reminder[2]}" (Raw: "x")']
+    if boot:
+        lines += ["      E: receiver (line=9)", attr("name", "0x01010003", check_apk.REMINDER_BOOT),
+                  attr("process", "0x01010011", boot[0]), attr("exported", "0x01010010", "true"),
+                  "        E: intent-filter (line=6)"]
+        for a in boot[1]:
+            lines += ["          E: action (line=7)", f'            A: {ANDROID}:name(0x01010003)="{a}" (Raw: "x")']
     lines += [
              "      E: provider (line=10)", attr("name", "0x01010003", check_apk.PROVIDER),
              attr("authorities", "0x01010018", band), attr("exported", "0x01010010", "false"),
@@ -149,6 +162,20 @@ class Package(unittest.TestCase):
                                (("", "false"), "HelioScanActivity is not in the :helio process")):
             errors, _ = check_apk.check_dump(*full_dump(pkg, scanner=scanner), pkg, True, None, self.STRINGS)
             self.assertIn(error, errors)
+
+    def test_reminder_receivers(self):
+        pkg = "io.github.compassionee.ritmo"
+        actions = tuple(sorted(check_apk.REMINDER_BOOT_ACTIONS))
+        for kw, error in ((dict(reminder=None), "HelioReminderReceiver missing"),
+                          (dict(reminder=(":helio", "true", None)), "HelioReminderReceiver is exported"),
+                          (dict(reminder=("", "false", None)), "HelioReminderReceiver is not in the :helio process"),
+                          (dict(reminder=(":helio", "false", "x.FIRE")), "HelioReminderReceiver has an intent-filter"),
+                          (dict(boot=None), "HelioReminderBootReceiver missing"),
+                          (dict(boot=("", actions)), "HelioReminderBootReceiver is not in the :helio process"),
+                          (dict(boot=(":helio", actions + ("android.intent.action.SEND",))),
+                           "HelioReminderBootReceiver actions: " + str(sorted(actions + ("android.intent.action.SEND",))))):
+            errors, _ = check_apk.check_dump(*full_dump(pkg, **kw), pkg, True, None, self.STRINGS)
+            self.assertEqual(errors, [error], kw)
 
     def test_auth_key_field(self):
         pkg = "io.github.compassionee.ritmo"

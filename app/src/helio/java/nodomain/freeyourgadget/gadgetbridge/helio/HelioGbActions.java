@@ -38,10 +38,25 @@ public interface HelioGbActions {
     String SCAN = "scan";
     /** Type or paste the band's auth key (checked, saved in the band's preferences by MAC address). */
     String AUTH_KEY = "authkey";
+    /** Choose the automatic backup folder (Android's folder picker, persistent permission), then back up at once. */
+    String BACKUP_FOLDER = "backup_folder";
+    /** Back up now into the chosen folder. */
+    String BACKUP_NOW = "backup_now";
+    /** Stop the automatic backups: the permission on the folder is given back, the files there stay. */
+    String BACKUP_OFF = "backup_off";
+    /** How often: every day, week or month. */
+    String BACKUP_DAY = "backup_day";
+    String BACKUP_WEEK = "backup_week";
+    String BACKUP_MONTH = "backup_month";
+    /** The reminders changed in settings.json: set the alarms again, asking for the notification permission if needed. */
+    String REMINDERS = "reminders";
+    /** Android's notification settings of Ritmo (permission refused for good, or notifications turned off). */
+    String NOTIFICATION_SETTINGS = "notif_settings";
 
     /** Same list as helio_android.ANDROID_ACTIONS. */
     Set<String> ALL = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(SYNC, SETTINGS, CHARTS, DATA, GADGETBRIDGE,
-            CATALOG_IMPORT, SCAN, AUTH_KEY)));
+            CATALOG_IMPORT, SCAN, AUTH_KEY, BACKUP_FOLDER, BACKUP_NOW, BACKUP_OFF, BACKUP_DAY, BACKUP_WEEK, BACKUP_MONTH,
+            REMINDERS, NOTIFICATION_SETTINGS)));
 
     void run(@NonNull String action);
 

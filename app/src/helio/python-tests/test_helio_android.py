@@ -643,6 +643,27 @@ class Transfer(unittest.TestCase):
         import helio_transfer
         self.assertEqual(helio_transfer.read_archive(again), helio_transfer.read_archive(data))
 
+    def test_backup_archive_is_the_export_without_catalog(self):
+        """The automatic backup (HelioBackup) calls export_state like the manual export: two archives made at different
+        times hold the same files; the food catalog, the disk cache and stray files never enter."""
+        import io
+        import tarfile
+        import helio_transfer
+        catalog = self.dir / "helio-catalog"
+        catalog.mkdir()
+        (catalog / "off.sqlite").write_bytes(b"SQLite format 3\0" + b"x" * 100)
+        (catalog / "off.json").write_text('{"kind": "off"}')
+        (self.state / "cache").mkdir()
+        (self.state / "cache" / "2026-03-10-day.json").write_text("{}")
+        (self.state / "notes.txt").write_text("x")
+        manual = helio_android.export_state(str(self.state), str(self.profile))
+        backup = helio_android.export_state(str(self.state), str(self.profile))
+        self.assertEqual(helio_transfer.read_archive(backup), helio_transfer.read_archive(manual))
+        with tarfile.open(fileobj=io.BytesIO(backup), mode="r:gz") as tar:
+            names = tar.getnames()
+        self.assertEqual(names, ["helio-export.json", "state/diary-2026-03.json", "state/labels.json", "state/weights.json"])
+        self.assertNotIn(b"SQLite", __import__("gzip").decompress(backup))
+
     def test_import_from_java_bytes(self):
         data = bytearray(helio_android.export_state(str(self.state), str(self.profile)))
         target = self.dir / "t"

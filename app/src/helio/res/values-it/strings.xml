@@ -34,4 +34,13 @@
     <string name="helio_authkey_bad_length">La chiave deve avere %1$d caratteri esadecimali: questa ne ha %2$d.</string>
     <string name="helio_authkey_bad_mac">Indirizzo MAC non valido: scrivilo come AA:BB:CC:DD:EE:FF.</string>
     <string name="helio_authkey_save_failed">Non è stato possibile salvare la chiave.</string>
+    <string name="helio_backup_failed">Backup automatico non riuscito: vedi Profilo › Backup automatico.</string>
+    <string name="helio_backup_no_picker">Su questo telefono nessuna app permette di scegliere una cartella.</string>
+    <string name="helio_backup_folder_refused">Ritmo non può mantenere l’accesso a questa cartella: scegline un’altra.</string>
+    <string name="helio_reminders_channel">Promemoria</string>
+    <string name="helio_reminders_channel_text">I promemoria di Ritmo che hai attivato nel Profilo: giornata completa, pesata.</string>
+    <string name="helio_reminder_day_title">Segna la giornata come completa</string>
+    <string name="helio_reminder_day_text">Il diario alimentare di oggi non è ancora segnato come completo.</string>
+    <string name="helio_reminder_weigh_title">Pesati</string>
+    <string name="helio_reminder_weigh_text">Oggi non hai ancora inserito il peso.</string>
 </resources>

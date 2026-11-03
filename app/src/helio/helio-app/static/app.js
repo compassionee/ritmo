@@ -271,7 +271,7 @@ function stageChart(box, sl) {
 
 /* ================= state and navigation ================= */
 let S = null, T = null, V = null, tab = "today", vitSel = "rhr";
-let SETTINGS = { lang: null, hints: [], save_mine: false };  // /api/settings: language, usage hints already used, save_mine
+let SETTINGS = { lang: null, hints: [], save_mine: false };  // /api/settings: language, usage hints already used, save_mine, reminders
 const TITLES = { today: "tab.today", fitness: "tab.fitness", sleep: "tab.sleep", food: "title.food", health: "tab.health", profile: "ui.app.profile_method" };
 
 function show(name) {
@@ -2379,6 +2379,8 @@ function renderAll() {
   renderCatalog(CATALOG);
   if (!$("aboutSheet").hidden) renderAbout();
   if (BAND) renderBand(BAND);
+  if (backupWas) renderBackup(backupWas);
+  renderReminders();
 }
 
 /* ================= food database (Profile) ================= */
@@ -2426,7 +2428,7 @@ window.helioCatalogImported = (r) => {
 let removeArmed = false;
 // a long operation of the app (HelioTaskReporter): {task, phase, percent?, end, ok}. The page stays usable meanwhile:
 // those operations never hold up its requests
-const TASKS = ["catalog_import", "export", "import", "csv"];
+const TASKS = ["catalog_import", "export", "import", "csv", "backup"];
 const TASK_PHASES = ["start", "copy", "unpack", "check", "run"];
 window.helioTask = (e) => {
   if (!e || !TASKS.includes(e.task) || !TASK_PHASES.includes(e.phase)) return;
@@ -2461,6 +2463,154 @@ $("catalogBench").addEventListener("click", async () => {
     $("catalogBenchOut").textContent = t("err.failed", { msg: e.message });
   } finally { b.disabled = false; }
 });
+
+/* ================= automatic backup (only in the Android app: HelioBackup) ================= */
+// Java keeps the folder (chosen once with Android's picker), how often and the last outcome; the page shows them and
+// sends the actions. Status: GET /api/android/backup, then window.helioBackup after every change.
+const BACKUP_ERRORS = ["folder_gone", "no_space", "write", "export", "no_folder"];
+function backupDate(ts) {
+  return new Date(ts * 1000).toLocaleDateString(I18N.locale(), { day: "numeric", month: "long", timeZone: TZ });
+}
+function renderBackup(b) {
+  $("backupCard").hidden = false;
+  $("backupEvery").value = b.every;
+  $("backupNow").hidden = !b.on;
+  $("backupOff").hidden = !b.on;
+  $("backupNow").disabled = !!b.running;
+  $("backupFolder").textContent = t(b.on ? "backup.change" : "backup.choose");
+  const info = $("backupInfo");
+  info.hidden = !b.on;
+  if (!b.on) $("backupState").textContent = t("backup.off_state");
+  else if (b.running) $("backupState").textContent = t("backup.running");
+  else $("backupState").textContent = b.last_ok ? t("backup.last", { when: bandWhen(b.last_ok) }) : t("backup.none_yet");
+  if (b.on) {
+    const lines = [t("backup.folder", { name: b.folder || t("backup.folder_unnamed") })];
+    if (b.last_file) lines.push(b.kept != null ? t("backup.last_file", { file: b.last_file, n: b.kept, keep: b.keep }) : b.last_file);
+    if (b.next && !b.error) lines.push(t("backup.next", { when: backupDate(b.next) }));
+    info.replaceChildren();
+    lines.forEach((line, i) => { if (i) h("br", null, null, info); info.append(line); });
+  }
+  const err = BACKUP_ERRORS.includes(b.error) ? b.error : (b.error ? "write" : null);
+  $("backupErr").hidden = !err;
+  $("backupErr").textContent = err ? t(`backup.err.${err}`, { when: b.error_at ? bandWhen(b.error_at) : "" }) : "";
+}
+let backupWas = null;
+window.helioBackup = (b) => {
+  if (!b || typeof b !== "object" || !ANDROID) return;
+  // a backup that just ended well: said once
+  if (backupWas && backupWas.running && !b.running && !b.error && b.last_ok) toast(t("backup.done"));
+  if (backupWas && backupWas.on && !b.on) toast(t("backup.stopped"));
+  backupWas = b;
+  renderBackup(b);
+};
+async function loadBackup() {
+  if (!ANDROID) return;
+  try { window.helioBackup(await getJson("/api/android/backup")); } catch (e) { /* the card stays hidden */ }
+}
+async function backupAction(action) {
+  $("backupErr").hidden = true;
+  try {
+    await postJson("/api/android/action", { action });
+    // the outcome comes back from the app (window.helioBackup)
+    if (action === "backup_now" && backupWas) window.helioBackup({ ...backupWas, running: true, error: null });
+  } catch (e) { showErr("backupErr", t("err.failed", { msg: e.message })); }
+}
+$("backupNow").addEventListener("click", () => backupAction("backup_now"));
+$("backupFolder").addEventListener("click", () => backupAction("backup_folder"));
+$("backupOff").addEventListener("click", () => backupAction("backup_off"));
+$("backupEvery").addEventListener("change", () => backupAction(`backup_${$("backupEvery").value}`));
+
+/* ================= reminders (only in the Android app: HelioReminders) ================= */
+// The rules are in settings.json (saved by Python, read by Java when an alarm goes off); Java answers with the
+// notification permission and the next times (GET /api/android/reminders, then window.helioReminders).
+let REMIND = null;
+const REMIND_DEFAULT = { day: { on: false, time: "21:30" }, weigh: { on: false, time: "07:30", days: [1, 2, 3, 4, 5, 6, 7] } };
+function remRules() {
+  return JSON.parse(JSON.stringify((SETTINGS && SETTINGS.reminders) || REMIND_DEFAULT));
+}
+function remWhen(ts) {
+  return new Date(ts * 1000).toLocaleString(I18N.locale(), { weekday: "short", day: "numeric", month: "short",
+    hour: "2-digit", minute: "2-digit", timeZone: TZ });
+}
+function renderReminders() {
+  if (!ANDROID) return;
+  const r = remRules();
+  $("remindCard").hidden = false;
+  $("remDayOn").checked = r.day.on;
+  $("remDayTime").value = r.day.time;
+  $("remWeighOn").checked = r.weigh.on;
+  $("remWeighTime").value = r.weigh.time;
+  const days = $("remWeighDays"); days.replaceChildren();
+  for (let i = 1; i <= 7; i++) {
+    const b = h("button", r.weigh.days.includes(i) ? "on" : "", isoWeekday(i, "weekdayshort"), days);
+    b.title = isoWeekday(i, "weekday");
+    b.setAttribute("aria-pressed", String(r.weigh.days.includes(i)));
+    b.addEventListener("click", () => {
+      const next = remRules();
+      next.weigh.days = next.weigh.days.includes(i) ? next.weigh.days.filter((d) => d !== i) : [...next.weigh.days, i].sort();
+      saveReminders(next);
+    });
+  }
+  const st = REMIND;
+  const anyOn = r.day.on || r.weigh.on;
+  const lines = [];
+  if (st && st.permission === "granted") {
+    if (r.day.on && st.next && st.next.day) lines.push(t("rem.next_day", { when: remWhen(st.next.day) }));
+    if (r.weigh.on && st.next && st.next.weigh) lines.push(t("rem.next_weigh", { when: remWhen(st.next.weigh) }));
+  }
+  $("remNext").hidden = !lines.length;
+  $("remNext").textContent = lines.join(" · ");
+  // reminders on but no permission (an imported backup, or notifications turned off in Android's settings)
+  const blocked = anyOn && st && st.permission !== "granted";
+  $("remAllow").hidden = !(blocked && st.permission === "ask");
+  $("remSettings").hidden = !(blocked && st.permission === "off") && !remDenied;
+  if (blocked) showErr("remErr", t(st.permission === "ask" ? "rem.perm_ask" : "rem.perm_off"));
+  else if (!remDenied) $("remErr").hidden = true;
+}
+let remDenied = false;
+async function saveReminders(next) {
+  $("remErr").hidden = true;
+  remDenied = false;
+  try {
+    SETTINGS.reminders = (await postJson("/api/settings", { reminders: next })).reminders;
+    renderReminders();
+    // the app sets the alarms again; turning one on asks Android's permission first (only then)
+    await postJson("/api/android/action", { action: "reminders" });
+  } catch (e) {
+    renderReminders();
+    showErr("remErr", e.message);
+  }
+}
+window.helioReminders = async (st) => {
+  if (!st || typeof st !== "object" || !ANDROID) return;
+  REMIND = st;
+  const r = remRules();
+  if (st.asked && st.permission !== "granted" && (r.day.on || r.weigh.on)) {
+    // the permission was just refused: the reminders stay off
+    r.day.on = false; r.weigh.on = false;
+    try { SETTINGS.reminders = (await postJson("/api/settings", { reminders: r })).reminders; } catch (e) { /* shown below */ }
+    remDenied = true;
+    renderReminders();
+    showErr("remErr", t("rem.denied"));
+    return;
+  }
+  renderReminders();
+};
+async function loadReminders() {
+  if (!ANDROID) return;
+  renderReminders();
+  try { window.helioReminders(await getJson("/api/android/reminders")); } catch (e) { /* the card works without */ }
+}
+$("remDayOn").addEventListener("change", () => { const n = remRules(); n.day.on = $("remDayOn").checked; saveReminders(n); });
+$("remWeighOn").addEventListener("change", () => { const n = remRules(); n.weigh.on = $("remWeighOn").checked; saveReminders(n); });
+$("remDayTime").addEventListener("change", () => {
+  const n = remRules(); if (!$("remDayTime").value) return renderReminders(); n.day.time = $("remDayTime").value; saveReminders(n);
+});
+$("remWeighTime").addEventListener("change", () => {
+  const n = remRules(); if (!$("remWeighTime").value) return renderReminders(); n.weigh.time = $("remWeighTime").value; saveReminders(n);
+});
+$("remAllow").addEventListener("click", () => postJson("/api/android/action", { action: "reminders" }).catch((e) => showErr("remErr", e.message)));
+$("remSettings").addEventListener("click", () => postJson("/api/android/action", { action: "notif_settings" }).catch((e) => showErr("remErr", e.message)));
 
 /* ================= About: licences and attributions ================= */
 const ABOUT_SOFTWARE = [
@@ -2862,6 +3012,8 @@ async function start() {
   if (restoreY) requestAnimationFrame(() => window.scrollTo({ top: restoreY }));
   loadBand();
   loadCatalog();
+  loadBackup();
+  loadReminders();
 }
 bootMark("page.js_start", BOOT_JS_START, BOOT_JS_START);
 bootMark("page.intl", BOOT_INTL_START, BOOT_INTL_END);
