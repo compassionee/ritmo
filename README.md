@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/compassionee/ritmo/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/compassionee/ritmo?label=download%20APK&logo=android&color=3ddc84"></a>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/compassionee/ritmo"><img alt="Get it on Obtainium" src="https://img.shields.io/badge/Obtainium-add-6750a4"></a>
   <img alt="Android 7.0+" src="https://img.shields.io/badge/Android-7.0%2B%20%C2%B7%2064--bit-3ddc84?logo=android&logoColor=white">
   <img alt="No network permission" src="https://img.shields.io/badge/network-none-8ab4f8">
   <img alt="Languages" src="https://img.shields.io/badge/languages-English%20%C2%B7%20Italian-b79cf2">
@@ -72,8 +73,22 @@ the phone. Every value comes with the published study or guideline it is compare
 > **Updating:** download the new APK from Releases and install it over the old one. Your data stays,
 > because every release is signed with the same key.
 >
-> **Checking the download (optional):** each release lists the SHA-256 of the APK and of the signing
-> certificate. With the Android SDK: `apksigner verify --print-certs Ritmo-vXXX.apk`.
+**Automatic updates with Obtainium (optional).** [Obtainium](https://github.com/ImranR98/Obtainium)
+installs and updates apps straight from their GitHub releases and refuses an update signed with a
+different key. Open [this link](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/compassionee/ritmo)
+on the phone, or add `https://github.com/compassionee/ritmo` in Obtainium by hand.
+
+**Checking the download (optional).** With [AppVerifier](https://github.com/soupslurpr/AppVerifier),
+copy the two lines below and share them to AppVerifier (or paste them in it): it checks the installed
+app against this package name and signing certificate.
+
+```
+io.github.compassionee.ritmo
+50:D8:AF:7F:34:08:A4:26:33:E7:6A:10:25:02:F1:2F:AD:78:74:A3:AF:9C:5B:98:B1:03:A9:46:18:22:B1:11
+```
+
+Each release also lists the SHA-256 of the APK. With the Android SDK:
+`apksigner verify --print-certs Ritmo-vXXX.apk`.
 
 ## 🚀 First setup
 
