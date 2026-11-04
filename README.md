@@ -156,6 +156,8 @@ WebView, process model, food database format, updating from Gadgetbridge) and
   installed only from a file.
 - No analytics, no crash reporting, no account. Your data lives in the app's private storage and
   leaves the phone only when you export it.
+- Why this matters: [what the official companion app prepares to send](docs/zepp-privacy.md), from a
+  static review.
 
 > [!IMPORTANT]
 > **Ritmo is not a medical device.** It is not meant to diagnose, treat or prevent any disease.
