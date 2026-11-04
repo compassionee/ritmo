@@ -171,6 +171,7 @@ android {
         buildConfigField "String", "GIT_DIRTY_STATUS", "\"${getGitDirtyFlag()}\""
         buildConfigField "boolean", "INTERNET_ACCESS", "false"
         buildConfigField "boolean", "HELIO_WEBVIEW_DEBUG", "false"
+        buildConfigField "boolean", "HELIO_CAPTURE", "false"
 
         manifestPlaceholders = [
             appAuthRedirectScheme: "${applicationId}"
@@ -231,7 +232,7 @@ android {
             dimension "device_type"
             applicationId = helioApplicationId()
             // Helio's own updates; must stay >= the installed one and >= Gadgetbridge's versionCode
-            versionCode = 273
+            versionCode = 274
             // Chaquopy needs API 24
             minSdk = 24
             ndk {
@@ -242,6 +243,10 @@ android {
             // -PhelioWebViewDebug=true, in every build type
             buildConfigField "boolean", "HELIO_WEBVIEW_DEBUG",
                     String.valueOf(project.findProperty("helioWebViewDebug") == "true")
+            // Capture mode (raw answers of fetch types not handled yet, Profile > About): only in personal test
+            // builds made with -PhelioCapture=true, never in a release
+            buildConfigField "boolean", "HELIO_CAPTURE",
+                    String.valueOf(project.findProperty("helioCapture") == "true")
         }
     }
 

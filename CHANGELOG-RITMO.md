@@ -3,6 +3,20 @@
 Changes of Ritmo (the `helio` flavor). The Gadgetbridge changelog is in [CHANGELOG.md](CHANGELOG.md).
 Every version is in [Releases](https://github.com/compassionee/ritmo/releases), with its APK and SHA-256.
 
+## 274 — 2026-11-04
+- Helio Strap: heart rate of every second and SDNN are now read at every sync, only from the last data
+  received, and saved in Gadgetbridge's database (new SDNN table; the seconds in the generic heart rate
+  table; database version 155).
+- Workouts: chart of the heart rate of every second; average and max heart rate and the minutes in the
+  zones come from the seconds where there are enough of them; the zone bar also shows the minutes below
+  the lowest zone, and says how many minutes come from the seconds.
+- Heart rate recovery at 60 s after each workout (as defined by Cole 1999), measured at the end of the
+  skipping rope when a session ends walking; compared only with your own workouts, with no thresholds.
+- Sleep: the band's SDNN of the night, shown as a measurement with its note (no independent source says
+  how to read it from a wrist or arm sensor).
+- Profile: how long the heart rate of every second is kept (30, 90 or 365 days, or always). Before the
+  seconds of a day are deleted, Ritmo saves what it computed from them, so old days keep their values.
+
 ## 273 — 2026-11-03
 - Automatic backup: pick a folder once; when you open Ritmo it saves the same archive as the manual
   export (daily, weekly or monthly) and keeps the last 5. Local only.

@@ -77,6 +77,7 @@ import java.util.concurrent.Executors;
 
 import nodomain.freeyourgadget.gadgetbridge.BuildConfig;
 import nodomain.freeyourgadget.gadgetbridge.R;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.HelioCaptureStore;
 
 /**
  * The Helio app: its web interface in a WebView that cannot reach the network, backed by the
@@ -97,6 +98,7 @@ public class HelioActivity extends Activity {
     private static final int REQUEST_SCAN = 5;
     private static final int REQUEST_BACKUP_FOLDER = 6;
     private static final int REQUEST_NOTIFICATIONS = 7;
+    private static final int REQUEST_CAPTURE_EXPORT = 8;
     /** A due backup waits this long after Ritmo opens or comes back, so that the page's first answers come first. */
     private static final long BACKUP_DELAY_MS = 5000;
     private static final int MENU_EXPORT = 1;
@@ -150,6 +152,7 @@ public class HelioActivity extends Activity {
         backup = new HelioBackup(getSharedPreferences(HelioBackup.PREFS, MODE_PRIVATE));
         final Map<String, HelioWebRouter.StatusSource> javaStatus = new HashMap<>();
         javaStatus.put(HelioWebRouter.BACKUP_PATH, () -> backup.status().toString());
+        javaStatus.put(HelioWebRouter.CAPTURE_PATH, () -> captureStatus().toString());
         javaStatus.put(HelioWebRouter.REMINDERS_PATH,
                 () -> HelioReminders.status(this, System.currentTimeMillis(), false).toString());
         router = new HelioWebRouter(backend, assetLoader, this::runGbAction, this::isGadgetbridgeRunning, javaStatus);
@@ -303,6 +306,10 @@ public class HelioActivity extends Activity {
             mainHandler.post(this::remindersChanged);
             return;
         }
+        if (action.startsWith("capture_")) {
+            captureAction(action);
+            return;
+        }
         if (HelioGbActions.NOTIFICATION_SETTINGS.equals(action)) {
             mainHandler.post(this::openNotificationSettings);
             return;
@@ -434,6 +441,11 @@ public class HelioActivity extends Activity {
             longWork.execute(() -> readForImport(uri));
         } else if (requestCode == REQUEST_CATALOG && uri != null) {
             longWork.execute(() -> importCatalog(uri));
+        } else if (requestCode == REQUEST_CAPTURE_EXPORT) {
+            // (only builds with the capture mode ask for it: without the flag this branch is compiled away)
+            if (uri != null && BuildConfig.HELIO_CAPTURE) {
+                longWork.execute(() -> exportCapture(uri));
+            }
         } else if (requestCode == REQUEST_BACKUP_FOLDER) {
             if (uri != null) {
                 backupFolderChosen(uri);
@@ -538,6 +550,91 @@ public class HelioActivity extends Activity {
         }
     }
 
+    /** Capture mode for the page: available only in builds made with -PhelioCapture=true. */
+    @NonNull
+    JSONObject captureStatus() {
+        final JSONObject o = BuildConfig.HELIO_CAPTURE
+                ? HelioCaptureStore.of(this).summary() : new JSONObject();
+        try {
+            o.put("available", BuildConfig.HELIO_CAPTURE);
+        } catch (final org.json.JSONException e) {
+            throw new IllegalStateException(e);
+        }
+        return o;
+    }
+
+    /** Profile > About > Capture mode (approved by the router; nothing at all without the build flag). */
+    void captureAction(@NonNull final String action) {
+        if (!BuildConfig.HELIO_CAPTURE) {
+            return;
+        }
+        final HelioCaptureStore store = HelioCaptureStore.of(this);
+        switch (action) {
+            case HelioGbActions.CAPTURE_ON:
+            case HelioGbActions.CAPTURE_OFF:
+                longWork.execute(() -> {
+                    try {
+                        store.setOn(HelioGbActions.CAPTURE_ON.equals(action));
+                    } catch (final IOException e) {
+                        LOG.error("Capture mode could not be saved", e);
+                    }
+                    sendCaptureStatus();
+                });
+                return;
+            case HelioGbActions.CAPTURE_CLEAR:
+                longWork.execute(() -> {
+                    store.clear();
+                    sendCaptureStatus();
+                });
+                return;
+            case HelioGbActions.CAPTURE_EXPORT:
+                final String name = "ritmo-capture-" + new SimpleDateFormat("yyyyMMdd-HHmm", Locale.ROOT).format(new Date()) + ".tgz";
+                mainHandler.post(() -> startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType(HelioArchive.EXPORT_MIME_TYPE)
+                        .putExtra(Intent.EXTRA_TITLE, name), REQUEST_CAPTURE_EXPORT));
+                return;
+            default:
+        }
+    }
+
+    private void sendCaptureStatus() {
+        sendToPage("window.helioCapture && window.helioCapture(" + captureStatus() + ")");
+    }
+
+    /** The capture folder as a .tgz (made by Python in the cache), copied where the user chose. */
+    private void exportCapture(@NonNull final Uri target) {
+        final HelioTaskReporter progress = task("capture");
+        progress.report("run", 0, 0);
+        final File tmp = new File(getCacheDir(), "capture-export.tgz");
+        boolean ok;
+        try {
+            backend.captureArchive(HelioCaptureStore.of(this).dir(), tmp);
+            try (InputStream in = new java.io.FileInputStream(tmp);
+                 OutputStream out = getContentResolver().openOutputStream(target, "wt")) {
+                if (out == null) {
+                    throw new IOException("no output stream");
+                }
+                final byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                }
+            }
+            ok = true;
+        } catch (final Exception e) {
+            LOG.error("Capture export failed", e);
+            ok = false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+        }
+        progress.end(ok);
+        final boolean saved = ok;
+        mainHandler.post(() -> Toast.makeText(this,
+                saved ? R.string.helio_saved : R.string.helio_save_failed, Toast.LENGTH_LONG).show());
+    }
+
     /** Automatic backup actions from the Profile (approved by the router). */
     private void backupAction(@NonNull final String action) {
         switch (action) {
@@ -604,12 +701,26 @@ public class HelioActivity extends Activity {
         }
     }
 
-    /** A due backup, a few seconds after Ritmo opens or comes back to the foreground. */
+    /**
+     * A few seconds after Ritmo opens or comes back to the foreground: a due backup, and the results of the heart rate
+     * seconds that Gadgetbridge may prune (saved before they go).
+     */
     private final Runnable backupIfDue = () -> {
         if (backup != null && !isFinishing() && backup.due(System.currentTimeMillis()) && !backup.isRunning()) {
             longWork.execute(() -> runBackup(false));
         }
+        if (backend != null && !isFinishing()) {
+            longWork.execute(this::prepareSecondsRetention);
+        }
     };
+
+    private void prepareSecondsRetention() {
+        try {
+            LOG.info("Heart rate seconds retention: {}", backend.prepareSecondsRetention());
+        } catch (final Exception e) {
+            LOG.warn("Heart rate seconds retention not prepared", e);
+        }
+    }
 
     /** On the long operations' queue: never at the same time as an export or an import. */
     void runBackup(final boolean manual) {

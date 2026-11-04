@@ -25,6 +25,7 @@ class RemindersServerUI(UIBase):
         self.page.click("#avatar")
         expect(self.page.locator("#tab-profile")).to_be_visible()
         expect(self.page.locator("#remindCard")).to_be_hidden()
+        expect(self.page.locator("#secondsCard")).to_be_hidden()
 
 
 @unittest.skipIf(sync_playwright is None, "Playwright not installed (normal on the server)")
@@ -169,6 +170,25 @@ class RemindersAppUI(UIBase):
         expect(self.page.locator("#remSettings")).to_be_visible()
         expect(self.page.locator("#remAllow")).to_be_hidden()
         self.assertTrue(self.saved()["day"]["on"])  # nothing changed by itself
+
+    def test_heart_rate_seconds_kept(self):
+        """How long Gadgetbridge keeps the heart rate of every second: 90 days by default, saved in settings.json."""
+        card = self.page.locator("#secondsCard")
+        expect(card).to_be_visible()
+        expect(self.page.locator("#secondsKeep")).to_have_value("90")
+        self.page.select_option("#secondsKeep", "365")
+        expect(self.page.locator("#toast")).to_contain_text(self.L("secs.saved"))
+        for _ in range(50):
+            p = self.state / "settings.json"
+            if p.exists() and json.loads(p.read_text()).get("hr_seconds_keep") == 365:
+                break
+            self.page.wait_for_timeout(50)
+        self.assertEqual(json.loads((self.state / "settings.json").read_text())["hr_seconds_keep"], 365)
+        self.page.select_option("#secondsKeep", "always")
+        self.page.wait_for_function("() => SETTINGS.hr_seconds_keep === null")
+        self.assertIsNone(json.loads((self.state / "settings.json").read_text())["hr_seconds_keep"])
+        card.locator("summary").click()
+        expect(card).to_contain_text(self.L("secs.note")[:50])
 
     def test_weigh_in_needs_a_day(self):
         self.page.check("#remWeighOn")

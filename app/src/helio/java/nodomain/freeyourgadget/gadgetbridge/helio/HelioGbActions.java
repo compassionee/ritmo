@@ -52,11 +52,19 @@ public interface HelioGbActions {
     String REMINDERS = "reminders";
     /** Android's notification settings of Ritmo (permission refused for good, or notifications turned off). */
     String NOTIFICATION_SETTINGS = "notif_settings";
+    /**
+     * Capture mode, only in personal test builds (-PhelioCapture=true; elsewhere these do nothing): raw answers of the
+     * band to the fetch types not handled yet, saved privately during the sync; save them as a .tgz, delete them.
+     */
+    String CAPTURE_ON = "capture_on";
+    String CAPTURE_OFF = "capture_off";
+    String CAPTURE_EXPORT = "capture_export";
+    String CAPTURE_CLEAR = "capture_clear";
 
     /** Same list as helio_android.ANDROID_ACTIONS. */
     Set<String> ALL = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(SYNC, SETTINGS, CHARTS, DATA, GADGETBRIDGE,
             CATALOG_IMPORT, SCAN, AUTH_KEY, BACKUP_FOLDER, BACKUP_NOW, BACKUP_OFF, BACKUP_DAY, BACKUP_WEEK, BACKUP_MONTH,
-            REMINDERS, NOTIFICATION_SETTINGS)));
+            REMINDERS, NOTIFICATION_SETTINGS, CAPTURE_ON, CAPTURE_OFF, CAPTURE_EXPORT, CAPTURE_CLEAR)));
 
     void run(@NonNull String action);
 

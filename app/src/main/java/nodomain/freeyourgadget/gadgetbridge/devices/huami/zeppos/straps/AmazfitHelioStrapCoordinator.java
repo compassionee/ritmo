@@ -64,6 +64,16 @@ public class AmazfitHelioStrapCoordinator extends ZeppOsCoordinator {
         return false;
     }
 
+    @Override
+    public boolean supportsHrvSdnn(@NonNull final GBDevice device) {
+        return true;
+    }
+
+    @Override
+    public boolean supportsHeartRateSeconds(@NonNull final GBDevice device) {
+        return true;
+    }
+
 
     @Override
     public DeviceKind getDeviceKind(@NonNull GBDevice device) {

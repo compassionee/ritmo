@@ -75,6 +75,24 @@
  "band.status.disconnected": "scollegata",
  "band.status.gb_stopped": "Gadgetbridge non attivo",
  "band.sync_started": "Sincronizzazione avviata",
+ "cap.clear": "Cancella le catture",
+ "cap.export": "Salva come .tgz",
+ "cap.last": "Ultima: {what}, {when}, {kb:1} KB",
+ "cap.never": "Non ancora chiesto",
+ "cap.note": "Solo in questa build di prova, disattivata di default. A ogni sincronizzazione, dopo i dati di sempre, Gadgetbridge chiede alla fascia anche i tipi che non gestisce ancora (battito al secondo v1 0x4c, eventi OSA 0x27, recupero del battito 0x46, battito a riposo 0x56, Body Battery 0x43; l’SDNN 0x4e e il battito al secondo 0x57 ora li legge la sincronizzazione normale) e salva le risposte grezze, senza interpretarle, in una cartella privata dell’app, con data e tipo; registra anche quali tipi la fascia rifiuta o lascia vuoti. La fascia conserva i dati, e nei dati di Gadgetbridge e di Ritmo non cambia nulla. Nulla esce dal telefono finché non salvi tu il .tgz: contiene i tuoi dati di salute.",
+ "cap.on": "Cattura durante la sincronizzazione",
+ "cap.outcome.data": "dati",
+ "cap.outcome.empty": "vuoto",
+ "cap.outcome.full": "cartella piena",
+ "cap.outcome.invalid": "risposta non valida",
+ "cap.outcome.no_answer": "nessuna risposta",
+ "cap.outcome.rejected": "rifiutato",
+ "cap.outcome.skipped": "saltato",
+ "cap.summary": {
+  "one": "{n:0} file salvato, {kb:0} KB",
+  "other": "{n:0} file salvati, {kb:0} KB"
+ },
+ "cap.title": "Modalità cattura (build di prova)",
  "cat.bench": "Prova velocità",
  "cat.bench_queries": "pa|mel|pasta|latte|pollo|bisc|yogurt greco|cioccolato fondente|acqua|pane integrale|nutella|chips",
  "cat.bench_result": {
@@ -346,6 +364,14 @@
  "fit.confirm": "Conferma",
  "fit.confirmed": "✓ Confermato",
  "fit.entered_by_you": "✓ Inserita da te",
+ "fit.hrr": "Recupero a 60 s: {v:0} bpm (da {a:0} a {b:0} bpm)",
+ "fit.hrr_active": "Nel minuto dopo la fine camminavi: il recupero dipende da cosa fai in quel minuto.",
+ "fit.hrr_after_rope": "dopo la corda, {time}",
+ "fit.hrr_note": "Come si calcola: battito alla fine dell’esercizio (mediana degli ultimi 10 secondi) meno battito un minuto dopo (mediana dei secondi 55–65), dal battito al secondo della fascia, come lo definisce Cole 1999; misurato così è riproducibile da una seduta all’altra (Fecchio 2019). La fine è quella dell’allenamento registrato con la fascia, altrimenti quella dell’attività inserita a mano o del blocco di battito alto. Perché non c’è “buono” o “cattivo”: negli studi un recupero di 12 bpm o meno si associa a un rischio più alto, ma era misurato dopo un test da sforzo massimale con un protocollo fisso (Cole 1999; Qiu 2017: per lo più test massimali sul tapis roulant, posizione spesso non indicata). Dopo un allenamento qualsiasi lo sforzo, il battito finale e quello che fai dopo cambiano ogni volta, quindi Ritmo lo confronta solo con i tuoi allenamenti. Non è una valutazione medica.",
+ "fit.hrr_own": {
+  "one": "Il tuo ultimo allenamento: {v:0} bpm",
+  "other": "I tuoi ultimi {n:0} allenamenti: mediana {v:0} bpm"
+ },
  "fit.jumps_note": {
   "one": "{n:0} salto di corda non contato come passo né come distanza.",
   "other": "{n:0} salti di corda non contati come passi né come distanza."
@@ -396,6 +422,14 @@
  "fit.zone_goal_unit": "di {goal} min",
  "fit.zone_range": "{lo}–{hi} bpm",
  "fit.zones_note": "Zone calcolate su FC massima {hrmax} bpm ({how}). Le zone Facile e Aerobica valgono 1 minuto, Soglia e Massimale 2, come nelle linee guida OMS.",
+ "fit.zones_sec": {
+  "one": "{n:0} minuto ripartito con il battito al secondo.",
+  "other": "{n:0} minuti ripartiti con il battito al secondo."
+ },
+ "fit.zones_sec_of": {
+  "one": "{n:0} minuto con battito, di cui {m:0} dai secondi.",
+  "other": "{n:0} minuti con battito, di cui {m:0} dai secondi."
+ },
  "fmt.dur": "{v:dur}",
  "fmt.dur_hm": "{h}h {m}m",
  "fmt.dur_m": "{m}m",
@@ -836,6 +870,14 @@
  "rule.spo2_min.title": "SpO₂: minimo confermato",
  "rule.spo2_motion.text": "Le letture fatte mentre cammini o muovi il polso vengono scartate: al polso gli artefatti da movimento sono più frequenti che al dito.",
  "rule.spo2_motion.title": "SpO₂: letture prese in movimento",
+ "secs.keep": "Conservalo per",
+ "secs.keep.30": "30 giorni",
+ "secs.keep.365": "1 anno",
+ "secs.keep.90": "90 giorni",
+ "secs.keep.always": "Sempre",
+ "secs.note": "Il battito al secondo della fascia occupa circa 3 MB al giorno nel database di Gadgetbridge. Prima di cancellare i secondi di un giorno, Ritmo salva nei tuoi dati quello che ne ha calcolato (minuti nelle zone, recupero a 60 s di ogni allenamento), così i giorni vecchi mantengono gli stessi valori; finisce anche nell’esportazione dei dati. La cancellazione avviene solo dopo che Ritmo ha salvato quei risultati, mai per gli ultimi 30 giorni. Accorciando il periodo, i secondi più vecchi vengono cancellati alla prossima sincronizzazione e non si possono recuperare; un allenamento di cui cambi poi gli orari, o una nuova FC massima, usa i valori al minuto per quei giorni.",
+ "secs.saved": "Salvato: i secondi più vecchi vengono cancellati alla prossima sincronizzazione",
+ "secs.title": "Battito al secondo",
  "sex.female": "donna",
  "sex.male": "uomo",
  "sex.unknown": "sesso non indicato",
@@ -882,6 +924,12 @@
  "sleep.none_text": "Indossa la fascia di notte: qui compariranno fasi, punteggio e commento.",
  "sleep.none_title": "Nessun sonno registrato",
  "sleep.score_note": "Punteggio del sonno: {text}",
+ "sleep.sdnn": "SDNN (fascia)",
+ "sleep.sdnn_note": "SDNN calcolato dalla fascia durante la notte, mostrato com’è e mai giudicato: nessuna fonte indipendente dice come leggere un SDNN da un sensore ottico portato al polso o al braccio. I valori dei sensori ottici non sono intercambiabili con quelli dell’ECG, e in sonno concordano meno (Xu 2026); i valori di riferimento dell’SDNN vengono da brevi registrazioni ECG a riposo (Nunan 2010), e la fascia non dice su quale intervallo calcola il suo valore.",
+ "sleep.sdnn_sub": {
+  "one": "ms, {n:0} misura della fascia",
+  "other": "ms, mediana di {n:0} misure della fascia"
+ },
  "sleep.src_band": "fascia",
  "sleep.src_samples": "stima dai campioni",
  "sleep.zepp_score": "Punteggio Zepp {score}",
@@ -910,6 +958,8 @@
  "src.coi.not_declared": "non dichiarati",
  "src.coi.present": "presenti",
  "src.coi_badge": "⚠ conflitti di interessi",
+ "src.cole_hrr.note": "Autori della Cleveland Clinic; la dichiarazione sui finanziamenti non è leggibile (testo integrale non accessibile).",
+ "src.cole_hrr.what": "recupero del battito dopo un test da sforzo e mortalità, coorte di 2.428 adulti",
  "src.compendium.note": "Accademico e di uso libero; la dichiarazione non era leggibile.",
  "src.compendium.what": "Compendium delle attività fisiche (valori MET da 701 studi)",
  "src.concheiro.note": "Fondi pubblici spagnoli; nessun conflitto. È lo studio indipendente più vicino alle fasce Zepp.",
@@ -930,6 +980,8 @@
  "src.eu_kcal.what": "fattori per calcolare le calorie in etichetta",
  "src.eu_tol.note": "Documento guida per i controlli ufficiali: quanto il contenuto vero può scostarsi dall'etichetta (misura compresa) e come vanno arrotondati i valori.",
  "src.eu_tol.what": "tolleranze e arrotondamenti dei valori nutrizionali in etichetta",
+ "src.fecchio_hrr.note": "Autori accademici (Brasile, Australia); la dichiarazione sui finanziamenti non è leggibile (testo integrale non accessibile).",
+ "src.fecchio_hrr.what": "riproducibilità degli indici di recupero del battito, revisione sistematica di 15 studi",
  "src.ferri_marini.note": "Fondi NIH (studio HERITAGE); nessun conflitto dichiarato.",
  "src.ferri_marini.what": "riserva cardiaca e riserva di ossigeno non coincidono (737 adulti)",
  "src.fischer.note": "Usato solo per la formula; dichiarazione non letta.",
@@ -980,6 +1032,8 @@
  "src.nsf_q.note": "Finanziato dalla National Sleep Foundation; autori con legami con Merck, UCB, Jazz e altre aziende.",
  "src.nsf_q.what": "indicatori di qualità del sonno della National Sleep Foundation",
  "src.nsf_q.why": "Nessuna fonte indipendente con soglie equivalenti è stata trovata: resta, segnalata.",
+ "src.nunan_hrv.note": "Autori accademici (Regno Unito); la dichiarazione sui finanziamenti non è stata verificata nel testo integrale.",
+ "src.nunan_hrv.what": "valori normali della variabilità cardiaca a breve termine negli adulti sani, revisione sistematica di 44 studi",
  "src.odriscoll.note": "Dottorato all'Università di Leeds; nessun conflitto dichiarato. I dispositivi tendono a sottostimare.",
  "src.odriscoll.what": "calorie dei dispositivi da polso, meta-analisi di 60 studi",
  "src.ohayon.note": "Studio non finanziato da aziende, ma autori con legami con Eli Lilly, Pfizer, Sepracor e Cephalon.",
@@ -992,6 +1046,8 @@
  "src.paluch.what": "passi e mortalità, meta-analisi di 15 coorti (47.471 adulti)",
  "src.pandolf.note": "Laboratorio militare USA, 1977; nessuna dichiarazione (non si usavano).",
  "src.pandolf.what": "costo del cammino con carico",
+ "src.qiu_hrr.note": "Conflitti dichiarati: nessuno.",
+ "src.qiu_hrr.what": "recupero del battito, eventi cardiovascolari e mortalità, meta-analisi di 9 coorti (41.600 persone)",
  "src.refalo.note": "Gli autori lavorano anche per aziende di coaching e divulgazione sul fitness (JPS Health & Fitness, MASS Research Review, 3D Muscle Journey). Risultati definiti esplorativi dagli autori.",
  "src.refalo.what": "proteine e massa magra in deficit, meta-regressione di 29 studi",
  "src.refalo.why": "Nessuna meta-analisi indipendente sulle proteine in deficit per chi fa forza è stata trovata: resta, segnalata.",
@@ -1028,6 +1084,8 @@
  "src.who_salt.what": "linee guida sul sodio: meno di 2 g al giorno, cioè 5 g di sale (raccomandazione forte)",
  "src.who_sfa.note": "Revisioni sistematiche commissionate dall'OMS, esperti con dichiarazioni di interessi verificate.",
  "src.who_sfa.what": "linee guida sui grassi saturi: meno del 10% delle calorie (raccomandazione forte)",
+ "src.xu_prv.note": "Nessun finanziamento esterno; nessun conflitto dichiarato.",
+ "src.xu_prv.what": "variabilità del polso dai sensori ottici confrontata con l’ECG, revisione sistematica e meta-analisi",
  "src.zhang.note": "Nessun conflitto dichiarato.",
  "src.zhang.what": "battito a riposo e mortalità, meta-analisi di 46 studi (1,2 milioni di persone)",
  "srcrm.acwr.what": "Rapporto carico acuto/cronico",
@@ -1695,6 +1753,7 @@
  "task.import": "Importazione dei dati",
  "task.csv": "File CSV",
  "task.backup": "Backup automatico",
+ "task.capture": "Modalità cattura",
  "task.phase.start": "avvio",
  "task.phase.copy": "copia del file",
  "task.phase.unpack": "decompressione",
@@ -1703,5 +1762,6 @@
  "task.percent": "{v:0}%",
  "boot.k.page_js_start": "Inizio di app.js",
  "boot.k.page_intl": "Prima inizializzazione di Intl (lingue e fusi orari)",
- "boot.k.page_js_end": "Fine del codice di primo livello di app.js"
+ "boot.k.page_js_end": "Fine del codice di primo livello di app.js",
+ "zone.below": "Sotto le zone"
 }

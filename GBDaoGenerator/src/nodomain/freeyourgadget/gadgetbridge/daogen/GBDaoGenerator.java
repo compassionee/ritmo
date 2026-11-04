@@ -110,7 +110,7 @@ public class GBDaoGenerator {
             outputDir.mkdirs();
         }
 
-        final Schema schema = new Schema(154, MAIN_PACKAGE + ".entities");
+        final Schema schema = new Schema(155, MAIN_PACKAGE + ".entities");
 
         final List<Entity> sampleProvidersToGenerate = new LinkedList<>();
         final List<Entity> batterySampleProvidersToGenerate = new LinkedList<>();
@@ -303,6 +303,7 @@ public class GBDaoGenerator {
         sampleProvidersToGenerate.add(addGenericRespiratoryRateSample(schema, user, device));
         sampleProvidersToGenerate.add(addGenericStressSample(schema, user, device));
         sampleProvidersToGenerate.add(addGenericHrvValueSample(schema, user, device));
+        sampleProvidersToGenerate.add(addGenericHrvSdnnSample(schema, user, device));
         addGenericTemperatureSample(schema, user, device);
         sampleProvidersToGenerate.add(addGenericSleepStageSample(schema, user, device));
         sampleProvidersToGenerate.add(addGenericTrainingLoadAcuteSample(schema, user, device));
@@ -2761,6 +2762,17 @@ public class GBDaoGenerator {
         addCommonTimeSampleProperties("AbstractHrvValueSample", hrvValueSample, user, device);
         hrvValueSample.addIntProperty(SAMPLE_HRV_VALUE).codeBeforeGetter(OVERRIDE).notNull();
         return hrvValueSample;
+    }
+
+    /**
+     * SDNN measured by the device (for example Zepp OS fetch type 0x4e), in milliseconds: the same shape as
+     * GenericHrvValueSample, a separate table because it is another statistic.
+     */
+    private static Entity addGenericHrvSdnnSample(Schema schema, Entity user, Entity device) {
+        Entity hrvSdnnSample = addEntity(schema, "GenericHrvSdnnSample");
+        addCommonTimeSampleProperties("AbstractHrvValueSample", hrvSdnnSample, user, device);
+        hrvSdnnSample.addIntProperty(SAMPLE_HRV_VALUE).codeBeforeGetter(OVERRIDE).notNull();
+        return hrvSdnnSample;
     }
 
     private static Entity addGenericSpo2Sample(Schema schema, Entity user, Entity device) {

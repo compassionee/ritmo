@@ -70,6 +70,29 @@ class BridgeBase(unittest.TestCase):
         cls.tmp.cleanup()
 
 
+class SecondsRetention(BridgeBase):
+    """The limit up to where Gadgetbridge may delete the heart rate seconds (HelioSecondsRetention reads this file)."""
+
+    def test_file_for_gadgetbridge(self):
+        path = str(self.dir / "helio-seconds-retention.json")
+        res = json.loads(helio_android.seconds_retention(path))
+        data = json.loads(open(path).read())
+        self.assertEqual(set(data), {"before_ms", "device_id", "keep_days", "written_ms"})
+        self.assertEqual(data["before_ms"], res["before"] * 1000)
+        self.assertEqual((data["device_id"], data["keep_days"]), (1, 90))
+        # the limit is a local midnight 90 days before today
+        today = self.h.now().date()
+        self.assertEqual(res["before"], self.h.midnight(today - self.h.timedelta(days=90)))
+        self.assertFalse(os.path.exists(path + ".tmp"))
+        # kept always: 0, nothing may go
+        self.h.save_settings({"hr_seconds_keep": None})
+        try:
+            helio_android.seconds_retention(path)
+            self.assertEqual(json.loads(open(path).read())["before_ms"], 0)
+        finally:
+            self.h.save_settings({"hr_seconds_keep": 90})
+
+
 class StartupTimeline(BridgeBase):
     """Profile > About > Startup times: the Python side of the timeline, through the bridge."""
 
@@ -663,6 +686,30 @@ class Transfer(unittest.TestCase):
             names = tar.getnames()
         self.assertEqual(names, ["helio-export.json", "state/diary-2026-03.json", "state/labels.json", "state/weights.json"])
         self.assertNotIn(b"SQLite", __import__("gzip").decompress(backup))
+
+    def test_capture_archive_has_only_the_capture_files(self):
+        """Capture mode (personal test builds): the folder as a .tgz, its own files only, never a link or a stray file."""
+        import tarfile
+        cap = self.dir / "helio-capture"
+        (cap / "20261103").mkdir(parents=True)
+        (cap / "config.json").write_text('{"on": true}')
+        (cap / "state.json").write_text('{"since": {"4e": 1}}')
+        (cap / "log.jsonl").write_text('{"type": "4e", "outcome": "data"}\n')
+        (cap / "20261103" / "221500-4e.bin").write_bytes(bytes(range(256)))
+        (cap / "20261103" / "221500-4e-2.bin").write_bytes(b"\x01")
+        (cap / "20261103" / "notes.txt").write_text("x")
+        (cap / "other.bin").write_bytes(b"x")
+        os.symlink(self.profile, cap / "20261103" / "221501-56.bin")
+        out = self.dir / "capture.tgz"
+        self.assertEqual(helio_android.capture_archive(str(cap), str(out)), 5)
+        with tarfile.open(out, "r:gz") as tar:
+            names = sorted(tar.getnames())
+            self.assertEqual(tar.extractfile("helio-capture/20261103/221500-4e.bin").read(), bytes(range(256)))
+            self.assertTrue(all(m.isreg() and m.uid == 0 and m.uname == "" for m in tar.getmembers()))
+        self.assertEqual(names, ["helio-capture/20261103/221500-4e-2.bin", "helio-capture/20261103/221500-4e.bin",
+                                 "helio-capture/config.json", "helio-capture/log.jsonl", "helio-capture/state.json"])
+        # an empty or missing folder: an empty archive, no error
+        self.assertEqual(helio_android.capture_archive(str(self.dir / "none"), str(out)), 0)
 
     def test_import_from_java_bytes(self):
         data = bytearray(helio_android.export_state(str(self.state), str(self.profile)))

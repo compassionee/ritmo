@@ -75,6 +75,8 @@ public class HelioWebRouter {
     static final String BACKUP_PATH = "/api/android/backup";
     /** Reminders: notification permission and next times (HelioReminders), answered here too. */
     static final String REMINDERS_PATH = "/api/android/reminders";
+    /** Capture mode (personal test builds): available, on, what was captured; answered here too. */
+    static final String CAPTURE_PATH = "/api/android/capture";
 
     private static final Pattern MESSAGE_ID = Pattern.compile("^\\{\"id\":(\\d{1,9})[,}]");
     /** Bridge message with the page's view (section, day, scroll), kept for a process restart. */

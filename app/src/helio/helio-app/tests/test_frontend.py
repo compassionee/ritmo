@@ -109,7 +109,7 @@ class ApiContract(unittest.TestCase):
         used.discard("android")  # Android app only: see test_android_endpoints_only_in_app
         self.assertEqual(used, {"summary", "trends", "vitals", "label", "week", "strength", "plan", "weight", "export",
                                 "nutrition", "foods", "food", "meal", "diary", "goal", "profile", "settings", "catalog",
-                                "balance", "startup"})
+                                "balance", "startup", "seconds"})
         for ep in used:
             self.assertRegex(SERVER, rf'"/api/{ep}[".]', ep)
 

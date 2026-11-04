@@ -75,6 +75,24 @@
  "band.status.disconnected": "disconnected",
  "band.status.gb_stopped": "Gadgetbridge not running",
  "band.sync_started": "Sync started",
+ "cap.clear": "Delete captures",
+ "cap.export": "Save as .tgz",
+ "cap.last": "Last: {what}, {when}, {kb:1} KB",
+ "cap.never": "Not asked yet",
+ "cap.note": "Only in this test build, off by default. During every sync, after the usual data, Gadgetbridge also asks the band for the types it does not handle yet (per-second heart rate v1 0x4c, OSA events 0x27, heart rate recovery 0x46, resting heart rate 0x56, Body Battery 0x43; SDNN 0x4e and the per-second heart rate 0x57 are now read by the normal sync) and saves the answers raw, uninterpreted, in a private folder of the app, with date and type; it also logs which types the band refuses or leaves empty. The data stays on the band and nothing changes in Gadgetbridge's or Ritmo's data. Nothing leaves the phone unless you save the .tgz yourself: it contains your health data.",
+ "cap.on": "Capture during the sync",
+ "cap.outcome.data": "data",
+ "cap.outcome.empty": "empty",
+ "cap.outcome.full": "folder full",
+ "cap.outcome.invalid": "invalid answer",
+ "cap.outcome.no_answer": "no answer",
+ "cap.outcome.rejected": "refused",
+ "cap.outcome.skipped": "skipped",
+ "cap.summary": {
+  "one": "{n:0} file saved, {kb:0} KB",
+  "other": "{n:0} files saved, {kb:0} KB"
+ },
+ "cap.title": "Capture mode (test build)",
  "cat.bench": "Test speed",
  "cat.bench_queries": "ch|app|bread|milk|chicken|bisc|greek yogurt|dark chocolate|water|wholemeal bread|nutella|crisps",
  "cat.bench_result": {
@@ -346,6 +364,14 @@
  "fit.confirm": "Confirm",
  "fit.confirmed": "✓ Confirmed",
  "fit.entered_by_you": "✓ Entered by you",
+ "fit.hrr": "Recovery at 60 s: {v:0} bpm (from {a:0} to {b:0} bpm)",
+ "fit.hrr_active": "You were walking in the minute after the end: the recovery depends on what you do in that minute.",
+ "fit.hrr_after_rope": "after the skipping rope, {time}",
+ "fit.hrr_note": "How it is computed: the heart rate at the end of the exercise (median of the last 10 seconds) minus the heart rate one minute later (median of seconds 55–65), from the band's heart rate of every second, as defined by Cole 1999; measured this way it is reproducible from one session to the next (Fecchio 2019). The end is the end of the workout recorded on the band, otherwise the end of the activity entered by hand or of the heart rate block. Why there is no “good” or “bad”: in the studies a recovery of 12 bpm or less goes with a higher risk, but it was measured after a maximal exercise test with a fixed protocol (Cole 1999; Qiu 2017: mostly maximal treadmill tests, posture often not stated). After an everyday workout the effort, the end heart rate and what you do afterwards change every time, so Ritmo compares it only with your own workouts. It is not a medical assessment.",
+ "fit.hrr_own": {
+  "one": "Your last workout: {v:0} bpm",
+  "other": "Your last {n:0} workouts: median {v:0} bpm"
+ },
  "fit.jumps_note": {
   "one": "{n:0} rope jump not counted as a step or as distance.",
   "other": "{n:0} rope jumps not counted as steps or as distance."
@@ -396,6 +422,14 @@
  "fit.zone_goal_unit": "of {goal} min",
  "fit.zone_range": "{lo}–{hi} bpm",
  "fit.zones_note": "Zones based on a max heart rate of {hrmax} bpm ({how}). Easy and Aerobic zones count 1 minute, Threshold and Maximal 2, as in the WHO guidelines.",
+ "fit.zones_sec": {
+  "one": "{n:0} minute split by the heart rate of every second.",
+  "other": "{n:0} minutes split by the heart rate of every second."
+ },
+ "fit.zones_sec_of": {
+  "one": "{n:0} minute with heart rate, {m:0} of them from the seconds.",
+  "other": "{n:0} minutes with heart rate, {m:0} of them from the seconds."
+ },
  "fmt.dur": "{v:dur}",
  "fmt.dur_hm": "{h}h {m}m",
  "fmt.dur_m": "{m}m",
@@ -836,6 +870,14 @@
  "rule.spo2_min.title": "SpO₂: confirmed minimum",
  "rule.spo2_motion.text": "Readings taken while you walk or move your wrist are discarded: at the wrist motion artefacts are more frequent than at the finger.",
  "rule.spo2_motion.title": "SpO₂: readings taken while moving",
+ "secs.keep": "Keep it for",
+ "secs.keep.30": "30 days",
+ "secs.keep.365": "1 year",
+ "secs.keep.90": "90 days",
+ "secs.keep.always": "Always",
+ "secs.note": "The band's heart rate of every second takes about 3 MB a day in Gadgetbridge's database. Before the seconds of a day are deleted, Ritmo saves what it computed from them in your data (minutes in the zones, recovery at 60 s of each workout), so old days keep the same values; it is also in the data export. Deleting happens only after Ritmo has saved those results, never for the last 30 days. Shortening the period deletes the older seconds at the next sync, and they cannot come back; a workout whose times you change later, or a new max heart rate, uses the minute values for those days.",
+ "secs.saved": "Saved: older seconds are deleted at the next sync",
+ "secs.title": "Heart rate of every second",
  "sex.female": "female",
  "sex.male": "male",
  "sex.unknown": "sex not set",
@@ -882,6 +924,12 @@
  "sleep.none_text": "Wear the band at night: stages, score and comments will appear here.",
  "sleep.none_title": "No sleep recorded",
  "sleep.score_note": "Sleep score: {text}",
+ "sleep.sdnn": "SDNN (band)",
+ "sleep.sdnn_note": "SDNN computed by the band during the night, shown as it is and never judged: no independent source says how to read an SDNN from an optical sensor worn on the wrist or arm. Values from optical sensors are not interchangeable with ECG ones, and they agree less during sleep (Xu 2026); the reference values of SDNN come from short ECG recordings at rest (Nunan 2010), and the band does not say over which interval it computes its value.",
+ "sleep.sdnn_sub": {
+  "one": "ms, {n:0} band measurement",
+  "other": "ms, median of {n:0} band measurements"
+ },
  "sleep.src_band": "band",
  "sleep.src_samples": "estimate from samples",
  "sleep.zepp_score": "Zepp score {score}",
@@ -910,6 +958,8 @@
  "src.coi.not_declared": "not declared",
  "src.coi.present": "present",
  "src.coi_badge": "⚠ conflicts of interest",
+ "src.cole_hrr.note": "Cleveland Clinic authors; the funding statement could not be read (full text not accessible).",
+ "src.cole_hrr.what": "heart rate recovery after an exercise test and mortality, cohort of 2,428 adults",
  "src.compendium.note": "Academic and free to use; the declaration was not readable.",
  "src.compendium.what": "Compendium of Physical Activities (MET values from 701 studies)",
  "src.concheiro.note": "Spanish public funds; no conflicts. It is the independent study closest to Zepp bands.",
@@ -930,6 +980,8 @@
  "src.eu_kcal.what": "factors to compute calories on labels",
  "src.eu_tol.note": "Guidance document for official controls: how far the true content may differ from the label (measurement included) and how values are rounded.",
  "src.eu_tol.what": "tolerances and rounding of nutrition values on labels",
+ "src.fecchio_hrr.note": "Academic authors (Brazil, Australia); the funding statement could not be read (full text not accessible).",
+ "src.fecchio_hrr.what": "reproducibility of the heart rate recovery indices, systematic review of 15 studies",
  "src.ferri_marini.note": "NIH funds (HERITAGE study); no conflicts declared.",
  "src.ferri_marini.what": "heart rate reserve and oxygen uptake reserve do not match (737 adults)",
  "src.fischer.note": "Used only for the formula; declaration not read.",
@@ -980,6 +1032,8 @@
  "src.nsf_q.note": "Funded by the National Sleep Foundation; authors with links to Merck, UCB, Jazz and other companies.",
  "src.nsf_q.what": "National Sleep Foundation sleep quality indicators",
  "src.nsf_q.why": "No equivalent thresholds from an independent source were found: it stays, flagged.",
+ "src.nunan_hrv.note": "Academic authors (United Kingdom); the funding statement was not checked in the full text.",
+ "src.nunan_hrv.what": "normal values of short-term heart rate variability in healthy adults, systematic review of 44 studies",
  "src.odriscoll.note": "PhD at the University of Leeds; no conflicts declared. Devices tend to underestimate.",
  "src.odriscoll.what": "calories from wrist devices, meta-analysis of 60 studies",
  "src.ohayon.note": "Study not funded by companies, but authors with links to Eli Lilly, Pfizer, Sepracor and Cephalon.",
@@ -992,6 +1046,8 @@
  "src.paluch.what": "steps and mortality, meta-analysis of 15 cohorts (47,471 adults)",
  "src.pandolf.note": "US military laboratory, 1977; no declaration (not used at the time).",
  "src.pandolf.what": "cost of walking with a load",
+ "src.qiu_hrr.note": "Disclosures: none.",
+ "src.qiu_hrr.what": "heart rate recovery, cardiovascular events and mortality, meta-analysis of 9 cohorts (41,600 people)",
  "src.refalo.note": "The authors also work for fitness coaching and education companies (JPS Health & Fitness, MASS Research Review, 3D Muscle Journey). Results described as exploratory by the authors.",
  "src.refalo.what": "protein and lean mass in a deficit, meta-regression of 29 studies",
  "src.refalo.why": "No independent meta-analysis on protein in a deficit for strength training was found: it stays, flagged.",
@@ -1028,6 +1084,8 @@
  "src.who_salt.what": "guideline on sodium: less than 2 g per day, that is 5 g of salt (strong recommendation)",
  "src.who_sfa.note": "Systematic reviews commissioned by WHO, experts with checked declarations of interests.",
  "src.who_sfa.what": "guideline on saturated fat: less than 10% of calories (strong recommendation)",
+ "src.xu_prv.note": "No external funding; no conflicts declared.",
+ "src.xu_prv.what": "pulse rate variability from optical sensors compared with ECG, systematic review and meta-analysis",
  "src.zhang.note": "No conflicts declared.",
  "src.zhang.what": "resting heart rate and mortality, meta-analysis of 46 studies (1.2 million people)",
  "srcrm.acwr.what": "Acute:chronic workload ratio",
@@ -1695,6 +1753,7 @@
  "task.import": "Data import",
  "task.csv": "CSV file",
  "task.backup": "Automatic backup",
+ "task.capture": "Capture mode",
  "task.phase.start": "starting",
  "task.phase.copy": "copying the file",
  "task.phase.unpack": "unpacking",
@@ -1703,5 +1762,6 @@
  "task.percent": "{v:0}%",
  "boot.k.page_js_start": "Start of app.js",
  "boot.k.page_intl": "First initialisation of Intl (languages and time zones)",
- "boot.k.page_js_end": "End of app.js top-level code"
+ "boot.k.page_js_end": "End of app.js top-level code",
+ "zone.below": "Below the zones"
 }

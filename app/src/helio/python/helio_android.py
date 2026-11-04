@@ -19,8 +19,10 @@ import importlib
 import io
 import json
 import os
+import re
 import sqlite3
 import sys
+import tarfile
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -42,7 +44,9 @@ ANDROID_ACTIONS = ("sync", "settings", "charts", "data", "gadgetbridge", "catalo
                    # automatic backup (HelioBackup): folder picker, now, stop, how often
                    "backup_folder", "backup_now", "backup_off", "backup_day", "backup_week", "backup_month",
                    # local reminders (HelioReminders): alarms set again after a change, Android's notification settings
-                   "reminders", "notif_settings")
+                   "reminders", "notif_settings",
+                   # capture mode of personal test builds (FetchCaptureOperation): on, off, save as .tgz, delete
+                   "capture_on", "capture_off", "capture_export", "capture_clear")
 # pull down: a sync only when needed
 PULL_ACTION = "pull"
 SYNC_COOLDOWN = 30  # seconds
@@ -289,6 +293,50 @@ def import_state(data, state_dir, profile_path, lang="en"):
         raise ImportFailed(e.text(lang if lang in ("it", "en") else "en")) from None
     helio_transfer.save_profile(profile_path, profile)
     return json.dumps({"files": n, "profile": sorted(profile), "backup": backup is not None})
+
+
+def seconds_retention(path):
+    """Prepares the pruning of the heart rate of every second (helio_app.seconds_retention: the results of the days to
+    prune are saved first) and writes, atomically, where Gadgetbridge reads it (HelioSecondsRetention, main process):
+    {"before_ms": ..., "device_id": ..., "keep_days": ...}. Each day is derived holding the request lock, so the page
+    keeps getting its answers in between. Returns the summary as JSON."""
+    res = _app.seconds_retention(guard=lambda: _handler_lock)
+    data = json.dumps({"before_ms": res["before"] * 1000, "device_id": res["device_id"], "keep_days": res["keep"],
+                       "written_ms": int(_wall() * 1000)}).encode()
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as fh:
+        fh.write(data)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+    return json.dumps(res)
+
+
+CAPTURE_NAME_RE = re.compile(r"^(?:config\.json|state\.json|log\.jsonl|\d{8}/\d{6}-[0-9a-f]{2}(?:-\d+)?\.bin)$")
+
+
+def capture_archive(src, out):
+    """The capture folder of a personal test build (FetchCaptureOperation: raw answers of the band, log, times) as a
+    .tgz written to out, for the user to save by hand. Only the folder's own files, regular, never a link; returns how
+    many. Nothing is interpreted nor sent anywhere."""
+    src = os.path.realpath(src)
+    names = []
+    for root, dirs, files in os.walk(src):
+        dirs[:] = sorted(d for d in dirs if not os.path.islink(os.path.join(root, d)))
+        for f in sorted(files):
+            path = os.path.join(root, f)
+            rel = os.path.relpath(path, src).replace(os.sep, "/")
+            if CAPTURE_NAME_RE.match(rel) and os.path.isfile(path) and not os.path.islink(path):
+                names.append(rel)
+    with tarfile.open(out, "w:gz", format=tarfile.PAX_FORMAT) as tar:
+        for rel in names:
+            info = tar.gettarinfo(os.path.join(src, rel), arcname="helio-capture/" + rel)
+            info.uid = info.gid = 0
+            info.uname = info.gname = ""
+            info.mode = 0o600
+            with open(os.path.join(src, rel), "rb") as fh:
+                tar.addfile(info, fh)
+    return len(names)
 
 
 def catalog_import(path, lang="en", progress=None):

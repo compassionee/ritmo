@@ -221,6 +221,68 @@ page's server).
   part reads the Parquet export with pyarrow, on the computer only); licences and attributions in the
   About screen.
 
+## Capture mode (personal test builds only)
+
+Built in only with `-PhelioCapture=true` (`BuildConfig.HELIO_CAPTURE`, false in every other build and in releases:
+the section stays hidden and its actions do nothing). Off until turned on in Profile > About > Capture mode.
+
+- During a sync that fetches activity, after the usual operations, `HuamiFetcher` queues one `FetchCaptureOperation`
+  per type Gadgetbridge does not handle yet: 0x56 REST_HR, 0x46 RECOVERY_HEART_RATE, 0x43 BODY_BATTERY,
+  0x27 SPO2_OSA_EVENT, 0x4c SEC_HR (only for the Helio Strap). 0x4e and 0x57 are read by the normal sync now (below):
+  capturing them as well would find them gone, since the normal ack drops them from the band.
+- The operation speaks the fetch protocol itself: start request (since three days ago the first time, then a day
+  before the last answer), fetch, ack. The ack is always "keep on device" (0x09): the band marks nothing as synced.
+  Nothing is written to Gadgetbridge's database or preferences, nor to Ritmo's data.
+- `HelioCaptureStore` (`files/helio-capture/`, next to `helio-state/`, never exported nor imported with it):
+  `YYYYMMDD/HHMMSS-<type>.bin` the payload as received (packet counters removed), `log.jsonl` one line per request
+  with the outcome (`data`, `empty`, `rejected` with the band's status byte, `invalid`, `no_answer`, `skipped`,
+  `full`), the band's start answer in hex, bytes, CRC check, packet gaps; `state.json` the times; `config.json` on/off.
+  The folder stops at 200 MB.
+- No answer for 60 s: the other capture requests of that sync are skipped (a late answer cannot be taken for the next
+  type's, and the normal sync, already finished, is never held up).
+- "Save as .tgz" (`capture_export`): Python (`helio_android.capture_archive`) packs the folder's own files, the user
+  chooses where; "Delete captures" (two taps) keeps only the on/off choice.
+- Tests: `FetchCaptureOperationTest` (simulated band), `HelioCaptureTest`, `test_helio_android.py`, `test_ui_capture.py`.
+
+## SDNN and heart rate every second (Helio Strap)
+
+Changes to Gadgetbridge's own code, kept small and in its style so that they can be proposed upstream:
+
+- `HuamiFetchDataType`: `SHRV_SDNN` 0x4e and `SEC_HR_V2` 0x57; `HuamiCoordinator.supportsHrvSdnn` and
+  `supportsHeartRateSeconds` (false by default, true for `AmazfitHelioStrapCoordinator`); `HuamiFetcher` queues the two
+  fetches with the HRV and heart rate types. Their tables are deleted with the device (`getAllDeviceDao`).
+- `FetchHrvSdnnOperation` (0x4e): records of 9 bytes, `u32 ts · s8 time zone · u32 SDNN (ms x 100)`, saved in ms in a
+  new table `GENERIC_HRV_SDNN_SAMPLE` (`GenericHrvSdnnSample`, the same shape as `GENERIC_HRV_VALUE_SAMPLE`; schema 155,
+  created by `createAllTables` when the app updates). The next fetch asks from one second after the last record.
+- `FetchHeartRateSecondsOperation` (0x57): packets `u32 start · u16 slots (300) · slots x u8 bpm`, sample i at start + i,
+  trailing 0xFF are padding, for the same start the longest packet wins (the band sends part of a packet, then all of it),
+  values outside 25-230 left out. Saved in the existing `GENERIC_HEART_RATE_SAMPLE`, one row per second (timestamp in
+  ms). The band answers with the packets starting at or after the requested time, so the next fetch starts at the last
+  packet's start: a packet still filling up is read again whole and its rows replaced. First fetch: one week back.
+- `AbstractRepeatingFetchOperation.advanceLastSyncTimestamp`: where the next fetch starts (one minute after the last
+  sample by default, as before).
+- Size: about 86,400 rows a day in `GENERIC_HEART_RATE_SAMPLE` (about 3 MB a day in the database), kept for the
+  period chosen in Ritmo's Profile (30, 90 (default), 365 days or always; `settings.json` `hr_seconds_keep`).
+- Pruning, in two steps so that old days never change values: Ritmo (when it opens or comes back, on the long
+  operations' queue, `helio_android.seconds_retention`) saves the results of every day older than the period that still
+  has seconds (minutes in the zones and minutes split by seconds of the day, of its workouts and sessions, the recovery
+  at 60 s of each workout) in `seconds-YYYY.json` in its data (exported with it), at most 60 days a run, then writes
+  `files/helio-seconds-retention.json` (`before_ms` = the local midnight that starts the period, or the first day not
+  saved yet; `device_id`). After each per-second fetch, `HelioSecondsRetention` (main process) deletes that device's rows
+  before that limit, never within the last 30 days, nothing without the file. A day without seconds uses the saved
+  results when the max heart rate is the same; a workout with other times, or another max heart rate, counts by minutes.
+  Tests: `HelioSecondsRetentionTest`, `tests/test_seconds.py` (Retention), `test_helio_android.py` (SecondsRetention).
+- Formats confirmed by two captures (`helio-formati.md` §8, §9). Tests: `FetchHeartRateSecondsOperationTest`
+  (synthetic packets and records, the tables Ritmo reads, rows replaced not doubled).
+
+In Ritmo (read-only, `helio_app.py`): a minute with at least 45 valid seconds is split among the zones by its seconds,
+the others count by their minute value as before; a workout's average and max heart rate come from the same seconds (the
+peaks a minute value smooths out), and its zone bar shows the minutes below the lowest zone too, rounded so that the
+parts add up; the recovery is measured at the end of the last recognised skipping-rope part when the session goes on
+walking after it ("after the skipping rope, 16:42"); a workout's chart reads the seconds when opened (`/api/seconds`);
+the recovery at 60 s after each workout (HRR60, Cole 1999) is compared only with the person's own workouts; the night's
+SDNN is shown as a measurement with its note, never judged. Tests: `tests/test_seconds.py`, `test_ui_seconds.py`.
+
 ## Folders
 
 | Path | Content |

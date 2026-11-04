@@ -8,7 +8,7 @@ import time as _clock  # before the other imports: the startup timeline measures
 _IMPORT_START = _clock.time()
 
 import base64
-from contextlib import closing
+from contextlib import closing, nullcontext
 import hashlib
 import hmac
 import json
@@ -162,6 +162,10 @@ def session_token():
     return hmac.new(AUTH_PASS.encode(), f"helio-session:{AUTH_USER}".encode(), "sha256").hexdigest()
 
 ACT = "HUAMI_EXTENDED_ACTIVITY_SAMPLE"
+# Helio Strap, fetched by the Helio build of Gadgetbridge: heart rate every second (type 0x57, in Gadgetbridge's
+# generic heart rate table, timestamps in ms) and SDNN measured by the band (type 0x4e, in ms)
+SEC_HR = "GENERIC_HEART_RATE_SAMPLE"
+SDNN_TABLE = "GENERIC_HRV_SDNN_SAMPLE"
 HR_MIN, HR_MAX = 30, 220
 ZONE_PCT = [0.50, 0.60, 0.70, 0.80, 0.90]  # thresholds in % of max HR
 
@@ -373,6 +377,8 @@ SIG_SUMS = {
     "HUAMI_SLEEP_SESSION_SAMPLE": ("LENGTH(DATA)",),
     "HUAMI_HEART_RATE_RESTING_SAMPLE": ("HEART_RATE",),
     "GENERIC_HRV_VALUE_SAMPLE": ("VALUE",),
+    SEC_HR: ("HEART_RATE",),
+    SDNN_TABLE: ("VALUE",),
     "HUAMI_SLEEP_RESPIRATORY_RATE_SAMPLE": ("RATE",),
     "HUAMI_SPO2_SAMPLE": ("SPO2",),
     "GENERIC_TEMPERATURE_SAMPLE": ("TEMPERATURE",),
@@ -433,7 +439,7 @@ def by_data(memo, key, con, compute, ranges, disk=None):
 #   - the rows it read: same signature (how many, the last time, the sums) as now in the database.
 # A file that cannot be read, of another key or with other rows is computed again and replaced.
 CACHE_NAME = "cache"  # helio_transfer.CACHE_NAME
-CACHE_FORMAT = 1
+CACHE_FORMAT = 3  # 2: heart rate of every second (zones, SDNN, recovery); 3: workouts: heart rate from seconds, minutes below the zones
 # what a day keeps on disk: the minute rows are read again only by the day shown (compute_day(full=True))
 DAY_LIGHT_DROP = ("rows", "hrs")
 
@@ -1222,6 +1228,126 @@ def zone_of(hr, hrmax):
     return z  # -1 = below zone 1
 
 
+# A minute is split among the zones by its seconds only if at least this many have a valid heart rate; otherwise it
+# counts whole in the zone of its minute value, as before (the band's per-second data has gaps of a second or two).
+SEC_MIN_PER_MIN = 45
+
+
+def sec_minutes(con, start, end, hrmax):
+    """Heart rate of every second between start and end, summed per minute in SQL (at most 1440 rows a day):
+    {minute start: (valid seconds, [seconds in zone 1..5], sum of the bpm, max bpm)}. Values outside HR_MIN..HR_MAX are
+    not readings."""
+    if not {"TIMESTAMP", "DEVICE_ID", "HEART_RATE"} <= columns(con, SEC_HR):
+        return {}
+    mult = ts_mult(con, SEC_HR)
+    if not mult:
+        return {}
+    ge = ", ".join("SUM(HEART_RATE>=?)" for _ in ZONE_PCT)
+    rows = con.execute(
+        f'SELECT (TIMESTAMP/{mult})/60*60 AS m, COUNT(*), SUM(HEART_RATE), MAX(HEART_RATE), {ge} FROM "{SEC_HR}" '
+        f'WHERE DEVICE_ID=? AND TIMESTAMP>=? '
+        f'AND TIMESTAMP<? AND HEART_RATE BETWEEN ? AND ? GROUP BY m',
+        [hrmax * x for x in ZONE_PCT] + [DEVICE_ID, start * mult, end * mult, HR_MIN, HR_MAX]).fetchall()
+    out = {}
+    for m, n, total, mx, *at_least in rows:
+        at_least = [x or 0 for x in at_least] + [0]
+        out[int(m)] = (n, [at_least[i] - at_least[i + 1] for i in range(len(ZONE_PCT))], total, mx)
+    return out
+
+
+def mixed_zones(rows, sec, hrmax):
+    """Minutes in each zone: a minute with enough seconds (SEC_MIN_PER_MIN) is split by them, the others count whole
+    by their minute value. A minute removed as a sensor error (clean_hr) stays out either way.
+    Returns (minutes per zone as floats, minutes counted from seconds, minutes below the lowest zone)."""
+    zones, by_sec, below = [0.0] * len(ZONE_PCT), 0, 0.0
+    for r in rows:
+        if r.get("hr_fix"):
+            continue
+        s = sec.get(r["t"]) if sec else None
+        if s and s[0] >= SEC_MIN_PER_MIN:
+            n, zs = s[0], s[1]
+            for i, v in enumerate(zs):
+                zones[i] += v / n
+            below += (n - sum(zs)) / n
+            by_sec += 1
+        elif r["hr"] is not None:
+            z = zone_of(r["hr"], hrmax)
+            if z >= 0:
+                zones[z] += 1
+            else:
+                below += 1
+    return zones, by_sec, below
+
+
+def mixed_hr(rows, sec):
+    """Average and max heart rate of a workout: from the seconds of the minutes that have enough of them (the peaks a
+    minute value smooths out), from the minute value elsewhere (weighted as 60 seconds); (None, None) without data."""
+    total = n = 0
+    mx = None
+    for r in rows:
+        if r.get("hr_fix"):
+            continue
+        s = sec.get(r["t"]) if sec else None
+        if s and s[0] >= SEC_MIN_PER_MIN:
+            total, n, mx = total + s[2], n + s[0], max(mx or 0, s[3])
+        elif r["hr"] is not None:
+            total, n, mx = total + 60 * r["hr"], n + 60, max(mx or 0, r["hr"])
+    return (round(total / n), mx) if n else (None, None)
+
+
+def round_parts(values):
+    """Whole minutes that add up to the rounded total (largest remainder): the zones of a workout and the minutes below
+    them sum to the minutes shown."""
+    floors = [math.floor(v) for v in values]
+    extra = round(sum(values)) - sum(floors)
+    for i in sorted(range(len(values)), key=lambda k: values[k] - floors[k], reverse=True)[:max(0, extra)]:
+        floors[i] += 1
+    return floors
+
+
+def who_minutes(zones):
+    """WHO-equivalent minutes: moderate (zones 2-3) plus twice the vigorous (zones 4-5)."""
+    return round(zones[1] + zones[2] + 2 * (zones[3] + zones[4]))
+
+
+def sec_series(con, start, end):
+    """[(second, bpm)] of the heart rate of every second between start (included) and end (excluded)."""
+    return series(con, SEC_HR, "HEART_RATE", start, end, HR_MIN, HR_MAX)
+
+
+# Heart rate recovery at 60 s: the heart rate at the end of the exercise minus the heart rate one minute later (Cole
+# 1999; Fecchio 2019: HRR60 has good reproducibility). Ritmo's choices, to resist the optical sensor's single wrong
+# seconds: the median of the 10 seconds before the end and of the seconds 55-65 after it, each with at least 8 valid
+# seconds; computed only if the end heart rate is at least the training threshold (40% of the heart rate reserve).
+HRR_BEFORE_S = 10
+HRR_AT_S = (55, 65)
+HRR_MIN_SECS = 8
+HRR_STEPS_ACTIVE = 60  # steps in the minute after the end: the recovery was walking, not standing or sitting
+
+
+def hrr60(con, end, hr_threshold, rows):
+    sec = sec_series(con, end - HRR_BEFORE_S, end + HRR_AT_S[1] + 1)
+    before = [v for t, v in sec if end - HRR_BEFORE_S <= t < end]
+    after = [v for t, v in sec if end + HRR_AT_S[0] <= t <= end + HRR_AT_S[1]]
+    if len(before) < HRR_MIN_SECS or len(after) < HRR_MIN_SECS:
+        return None
+    end_hr, hr60 = statistics.median(before), statistics.median(after)
+    if end_hr < hr_threshold:
+        return None
+    steps = sum(r["steps"] for r in rows if end <= r["t"] < end + 60)
+    return {"value": round(end_hr - hr60), "end_hr": round(end_hr), "hr60": round(hr60), "at": int(end),
+            "active": steps >= HRR_STEPS_ACTIVE}
+
+
+def training_end(t, sessions):
+    """When the exercise stopped: the end of a workout recorded on the band that overlaps it, otherwise the end of an
+    activity entered by hand, otherwise the end of the last minute of its heart rate block."""
+    band = [s["end"] for s in sessions if s.get("source") == "band" and s["start"] < t["end"] + 60 and s["end"] > t["start"]]
+    if band:
+        return max(band)
+    return t["end"] if t["source"] == "manual" else t["end"] + 60
+
+
 DEFAULT_KCAL_METHOD = M("kcal.default_method")
 
 
@@ -1240,24 +1366,22 @@ def kcal_active_minute(r, p, hr_threshold):
     return walk
 
 
-def describe_session(sess, rows, p, hr_threshold):
+def describe_session(sess, rows, p, hr_threshold, sec=None):
     part = [r for r in rows if sess["start"] <= r["t"] <= sess["end"]]
     hrs = [r["hr"] for r in part if r["hr"] is not None]
-    zones = [0] * 5
-    for h in hrs:
-        z = zone_of(h, p["hrmax"])
-        if z >= 0:
-            zones[z] += 1
+    zf, by_sec, below = mixed_zones(part, sec, p["hrmax"])
+    below, *zones = round_parts([below] + zf)
+    sec_avg, sec_max = mixed_hr(part, sec) if by_sec else (None, None)
     sess.update({
         "name": sess.get("name") or KIND_NAMES.get(sess.get("kind"), KIND_NAMES["activity"]),
         "source": sess.get("source", "gadgetbridge"),
         "duration_min": round((sess["end"] - sess["start"]) / 60),
-        "avg_hr": (round(mean(hrs)) if hrs else None) if (not sess.get("avg_hr_gb") or any(r.get("hr_fix") for r in part))
-        else sess["avg_hr_gb"],
+        "avg_hr": sec_avg if by_sec else (round(mean(hrs)) if hrs else None)
+        if (not sess.get("avg_hr_gb") or any(r.get("hr_fix") for r in part)) else sess["avg_hr_gb"],
         "hr_fixed": sum(1 for r in part if r.get("hr_fix")),
-        "max_hr": max(hrs) if hrs else None,
+        "max_hr": sec_max if by_sec else max(hrs) if hrs else None,
         "kcal": round(sum(kcal_active_minute(r, p, hr_threshold) for r in part)),
-        "zones": zones,
+        "zones": zones, "zones_sec_min": by_sec, "zone_below": below,
         "trimp": round(sci.banister_trimp(hrs, p.get("rest") or 60, p["hrmax"], p["sex"])),
         "hr": [[r["t"], r["hr"]] for r in part if r["hr"] is not None],
     })
@@ -1396,7 +1520,7 @@ def sleep_from_samples(con, d):
 
 _sleepcache = Memo(400)
 SLEEP_TABLES = ("GENERIC_HRV_VALUE_SAMPLE", "HUAMI_SLEEP_RESPIRATORY_RATE_SAMPLE", "HUAMI_SPO2_SAMPLE",
-                "GENERIC_TEMPERATURE_SAMPLE", ACT)
+                "GENERIC_TEMPERATURE_SAMPLE", ACT, SDNN_TABLE)
 
 
 def sleep_ranges(d, res):
@@ -1443,6 +1567,7 @@ def _sleep_for(con, d):
     arows = activity_rows(con, start, end + 60)
     hr = [r["hr"] for r in arows if r["hr"] is not None]
     hrv = night("GENERIC_HRV_VALUE_SAMPLE", "VALUE", 5, 250)
+    sdnn = night(SDNN_TABLE, "VALUE", 5, 300)
     resp = night("HUAMI_SLEEP_RESPIRATORY_RATE_SAMPLE", "RATE", 4, 40)
     sp = spo2_clean(series(con, "HUAMI_SPO2_SAMPLE", "SPO2", start, end + 60, 70, 100), arows)
     temp = night("GENERIC_TEMPERATURE_SAMPLE", "TEMPERATURE", 20, 42)
@@ -1455,6 +1580,8 @@ def _sleep_for(con, d):
         "efficiency": min(100, round(100 * total / in_bed)),
         "avg_hr": rnd(mean(hr)), "min_hr": min(hr) if hr else None,
         "hrv": rnd(statistics.median(hrv)) if hrv else None,
+        # SDNN computed by the band (0x4e): shown as a measurement only, see SDNN_NOTE_SOURCES
+        "sdnn": rnd(statistics.median(sdnn)) if sdnn else None, "sdnn_n": len(sdnn),
         "resp": rnd(mean(resp), 1), "spo2": sp["avg"] if sp else None, "spo2_min": sp["min"] if sp else None,
         "spo2_min_raw": sp["min_raw"] if sp else None, "spo2_dips": sp["isolated_dips"] if sp else 0,
         "spo2_motion": sp["motion_removed"] if sp else 0,
@@ -2011,13 +2138,11 @@ def jump_minutes(t_type, part):
     return set()
 
 
-def training_entry(a, b, part, p, rest, hr_threshold, gb, f, sug, lb, source):
+def training_entry(a, b, part, p, rest, hr_threshold, gb, f, sug, lb, source, sec=None):
     hrs = [r["hr"] for r in part if r["hr"] is not None]
-    zones = [0] * 5
-    for hv in hrs:
-        z = zone_of(hv, p["hrmax"])
-        if z >= 0:
-            zones[z] += 1
+    zf, by_sec, below = mixed_zones(part, sec, p["hrmax"])
+    below, *zones = round_parts([below] + zf)
+    avg_hr, max_hr = mixed_hr(part, sec)
     kcal_default = sum(kcal_active_minute(r, p, hr_threshold) for r in part)
     load = 0
     if lb and lb.get("type"):
@@ -2036,8 +2161,8 @@ def training_entry(a, b, part, p, rest, hr_threshold, gb, f, sug, lb, source):
         "start": a, "end": b, "duration_min": round((b - a) / 60) + (0 if source == "manual" else 1), "steps": f["steps"],
         "jumps": jumps,
         "distance_km": round((f["steps"] - jumps) * p["stride_m"] / 1000, 2),
-        "avg_hr": round(mean(hrs)) if hrs else None, "max_hr": max(hrs) if hrs else None,
-        "zones": zones, "trimp": round(sci.banister_trimp(hrs, rest, p["hrmax"], p["sex"])),
+        "avg_hr": avg_hr, "max_hr": max_hr,
+        "zones": zones, "zones_sec_min": by_sec, "zone_below": below, "trimp": round(sci.banister_trimp(hrs, rest, p["hrmax"], p["sex"])),
         "hr": [[r["t"], r["hr"]] for r in part if r["hr"] is not None],
         "features": f, "suggestion": sug, "source": source,
         "label": ({"type": lb["type"], "day": lb.get("day") if lb["type"] == "strength" else None,
@@ -2052,7 +2177,7 @@ def training_entry(a, b, part, p, rest, hr_threshold, gb, f, sug, lb, source):
     }
 
 
-def build_trainings(d, rows, p, rest, hr_threshold, gb):
+def build_trainings(d, rows, p, rest, hr_threshold, gb, sec=None):
     labels = labels_view()
     auto_labels = {k: v for k, v in labels.items() if not v.get("manual")}
     day_a, day_b = midnight(d), midnight(d + timedelta(days=1))
@@ -2068,7 +2193,7 @@ def build_trainings(d, rows, p, rest, hr_threshold, gb):
         f = train_features(part, rest, p["hrmax"])
         sug = {"type": m["type"], "day": m.get("day"), "name": type_name(m["type"], m.get("day")),
                "confidence": "manual", "reason": [M("why.manual")]}
-        out.append(training_entry(m["start"], m["end"], part, p, rest, hr_threshold, gb, f, sug, m, "manual"))
+        out.append(training_entry(m["start"], m["end"], part, p, rest, hr_threshold, gb, f, sug, m, "manual", sec))
     for a, b in hr_blocks(rows, rest, p["hrmax"], [x for x in gb if x["source"] == "gadgetbridge"]):
         # a block inside a manually added activity (for example a work shift) belongs to it
         if any(min(b, m["end"]) - max(a, m["start"]) > 0.5 * (b - a + 60) for m in manual):
@@ -2079,7 +2204,7 @@ def build_trainings(d, rows, p, rest, hr_threshold, gb):
         a, b = part[0]["t"], part[-1]["t"]  # without the edges shared with an activity entered by hand
         f = train_features(part, rest, p["hrmax"])
         _, lb = match_label(auto_labels, a, b)
-        out.append(training_entry(a, b, part, p, rest, hr_threshold, gb, f, suggest(f, plan, labels), lb, "battito"))
+        out.append(training_entry(a, b, part, p, rest, hr_threshold, gb, f, suggest(f, plan, labels), lb, "battito", sec))
     return sorted(out, key=lambda x: x["start"])
 
 
@@ -2162,7 +2287,9 @@ def compute_day(con, d, p, full=False):
     if d >= now().date():
         return _daycache.get(key + ("today",), lambda: _compute_day(con, d, p), version=now_version(con))
     a, b = midnight(d), midnight(d + timedelta(days=1))
-    ranges = lambda r: [(ACT, a, b), ("HUAMI_HEART_RATE_RESTING_SAMPLE", a, b), ("BASE_ACTIVITY_SUMMARY", a, b)]  # noqa: E731
+    # the seconds of the next day's first minutes too: the recovery after a workout ending just before midnight
+    ranges = lambda r: [(ACT, a, b), ("HUAMI_HEART_RATE_RESTING_SAMPLE", a, b), ("BASE_ACTIVITY_SUMMARY", a, b),  # noqa: E731
+                        (SEC_HR, a, b + 120)]
     if full:
         day = by_data(_daycache, key, con, lambda: _compute_day(con, d, p), ranges)
         if "rows" in day:
@@ -2192,22 +2319,36 @@ def _compute_day(con, d, p):
     rest_ref = resting or p.get("rest_hr") or 60
     p = {**p, "rest": rest_ref}
     hr_threshold = rest_ref + 0.4 * (p["hrmax"] - rest_ref)
-    zones = [0] * 5
-    for h in hrs:
-        z = zone_of(h, p["hrmax"])
-        if z >= 0:
-            zones[z] += 1
+    sec = sec_minutes(con, start, end, p["hrmax"])
+    zf, zones_sec, zones_below = mixed_zones(rows, sec, p["hrmax"])
+    hr_minutes = round(sum(zf) + zones_below)  # minutes with a heart rate: those split by seconds are part of them
+    zones = [round(z) for z in zf]
 
     active_kcal = sum(kcal_active_minute(r, p, hr_threshold) for r in worn)
     # basal metabolism of every hour of the day (23 or 25 on the days the clock changes): with the activity so far,
     # today's total is the least the day will cost (see day_energy)
     bmr_kcal = p["bmr"] * (end - start) / 86400  # elapsed: the basal metabolism is per 24 hours
 
-    sessions = [describe_session(s, rows, p, hr_threshold)
+    sessions = [describe_session(s, rows, p, hr_threshold, sec)
                 for s in sorted(band_workouts(con, start, end) + gb_sessions(rows, p["stride_m"]),
                                 key=lambda s: s["start"])]
     gb = [s for s in sessions if s["source"] == "gadgetbridge"]
-    trainings = build_trainings(d, rows, p, rest_ref, hr_threshold, sessions)
+    trainings = build_trainings(d, rows, p, rest_ref, hr_threshold, sessions, sec)
+    for t in trainings:
+        stop, after = training_end(t, sessions), None
+        # a session that ends walking after a recognised intense part (skipping rope): the recovery after that part
+        if t.get("rope") and t["rope"][-1][1] <= stop - 60:
+            stop, after = t["rope"][-1][1], "rope"
+        t["hrr60"] = hrr60(con, stop, hr_threshold,
+                           rows + activity_rows(con, end, end + 120) if t["end"] >= end - 180 else rows) if sec else None
+        if t["hrr60"] and after:
+            t["hrr60"]["after"] = after
+    zone_minutes = who_minutes(zf)
+    # seconds pruned by Gadgetbridge: the results saved before (seconds_retention), with the same max heart rate
+    der = None if sec else derived_load(d)
+    if der and der.get("hrmax") == p["hrmax"]:
+        zones, zone_minutes, zones_sec = derived_apply(der, trainings, sessions)
+        hr_minutes = der.get("hr_minutes", hr_minutes)
     active_kcal += sum(t["kcal"] - t["kcal_default"] for t in trainings)
 
     # skipping-rope jumps: left out of steps and distance (they stay in the Gadgetbridge data)
@@ -2239,8 +2380,8 @@ def _compute_day(con, d, p):
                  "range": [round(low), round(high)],
                  "active_range": [round(other * (1 - sci.ACTIVE_ERR) + sum(t["kcal_range"][0] for t in trainings)),
                                   round(other * (1 + sci.ACTIVE_ERR) + sum(t["kcal_range"][1] for t in trainings))]},
-        "zones": zones,
-        "zone_minutes": zones[1] + zones[2] + 2 * (zones[3] + zones[4]),
+        "zones": zones, "zones_sec_min": zones_sec, "hr_minutes": hr_minutes,
+        "zone_minutes": zone_minutes,
         "trimp": sum(t["trimp"] for t in trainings),
         "resting": resting, "resting_src": resting_src,
         "hrs": hrs, "rows": rows, "sessions": sessions, "trainings": trainings,
@@ -2248,6 +2389,111 @@ def _compute_day(con, d, p):
         "worn_min": len(worn),  # minutes with the band on the wrist (needed to use the expenditure in the balance)
     }
     return res
+
+
+# ---------------------------------------------------------------- results of the heart rate of every second
+# Gadgetbridge keeps the seconds for hr_seconds_keep days (FetchHeartRateSecondsOperation deletes the older ones, only
+# up to where Ritmo says it may: HelioSecondsRetention). Before a day's seconds go, its results are saved here, in the
+# user's data (exported with it): minutes in the zones and minutes split by seconds of the day, of its workouts and
+# sessions, and the recovery at 60 s of each workout. A day without seconds left uses them, so its values do not
+# change after the pruning; with another max heart rate, or a workout with other times, the minute values count again.
+DERIVED_NAME = "seconds-{year}.json"
+RETENTION_LIMIT = 60  # days derived in one run, so that the first run after a long time does not take minutes
+
+
+def derived_load(d):
+    rec = state_load(DERIVED_NAME.format(year=d.year)).get(d.isoformat())
+    return rec if isinstance(rec, dict) else None
+
+
+def derived_record(day):
+    """What a day with seconds shows, kept for when they are gone."""
+    pick = lambda xs: [{"start": x["start"], "end": x["end"], "zones": x["zones"], "sec_min": x.get("zones_sec_min", 0),  # noqa: E731
+                        "below": x.get("zone_below", 0), "avg_hr": x.get("avg_hr"), "max_hr": x.get("max_hr"),
+                        "hrr60": x.get("hrr60")} for x in xs]
+    return {"hrmax": day["profile"]["hrmax"], "zones": day["zones"], "zone_minutes": day["zone_minutes"],
+            "sec_min": day["zones_sec_min"], "hr_minutes": day["hr_minutes"], "trainings": pick(day["trainings"]), "sessions": pick(day["sessions"])}
+
+
+def derived_apply(der, trainings, sessions):
+    """The saved results of a day whose seconds were pruned; returns (zones, zone minutes, minutes from seconds)."""
+    for items, saved in ((trainings, der.get("trainings") or []), (sessions, der.get("sessions") or [])):
+        by_times = {(x["start"], x["end"]): x for x in saved}
+        for x in items:
+            m = by_times.get((x["start"], x["end"]))
+            if m:
+                x["zones"], x["zones_sec_min"] = m["zones"], m["sec_min"]
+                x["zone_below"], x["avg_hr"], x["max_hr"] = m.get("below", 0), m.get("avg_hr"), m.get("max_hr")
+                if "hrr60" in x or m.get("hrr60"):
+                    x["hrr60"] = m.get("hrr60")
+    return der["zones"], der["zone_minutes"], der["sec_min"]
+
+
+def day_has_seconds(con, d):
+    if not {"TIMESTAMP", "DEVICE_ID"} <= columns(con, SEC_HR) or not ts_mult(con, SEC_HR):
+        return False
+    mult = ts_mult(con, SEC_HR)
+    return con.execute(f'SELECT 1 FROM "{SEC_HR}" WHERE DEVICE_ID=? AND TIMESTAMP>=? AND TIMESTAMP<? LIMIT 1',
+                       (DEVICE_ID, midnight(d) * mult, midnight(d + timedelta(days=1)) * mult)).fetchone() is not None
+
+
+def seconds_retention(today=None, limit=RETENTION_LIMIT, guard=None):
+    """Prepares the pruning of the heart rate of every second (Helio build): saves the results of every day older than
+    the kept period that still has its seconds (again each time, so they follow the latest profile and labels), then
+    says up to where Gadgetbridge may delete: {"before": s, "keep": days, "derived": n, "device_id": id}. before is the
+    local midnight that starts the kept period, or the first day it could not derive yet (limit reached); 0 = keep all.
+    guard: a context manager held around each day (the app's request lock)."""
+    keep = settings_load()["hr_seconds_keep"]
+    out = {"before": 0, "keep": keep, "derived": 0, "device_id": DEVICE_ID}
+    if keep is None:
+        return out
+    today = today or now().date()
+    cutoff = today - timedelta(days=keep)
+    out["before"] = midnight(cutoff)
+    with closing(connect()) as con:
+        if not {"TIMESTAMP", "DEVICE_ID"} <= columns(con, SEC_HR) or not ts_mult(con, SEC_HR):
+            return out
+        mult = ts_mult(con, SEC_HR)
+        first = con.execute(f'SELECT MIN(TIMESTAMP) FROM "{SEC_HR}" WHERE DEVICE_ID=?', (DEVICE_ID,)).fetchone()[0]
+        if first is None:
+            return out
+        d = datetime.fromtimestamp(first // mult, TZ).date()
+        while d < cutoff:
+            if day_has_seconds(con, d):
+                if out["derived"] >= limit:
+                    out["before"] = midnight(d)
+                    break
+                with guard() if guard else nullcontext():
+                    rec = derived_record(_compute_day(con, d, profile(con, d)))
+                    with _labels_lock:
+                        name = DERIVED_NAME.format(year=d.year)
+                        data = state_load(name)
+                        if data.get(d.isoformat()) != rec:
+                            data[d.isoformat()] = rec
+                            state_save(name, data)
+                out["derived"] += 1
+            d += timedelta(days=1)
+    return out
+
+
+HR_SECONDS_MAX_S = 6 * 3600  # elapsed: the longest stretch of seconds one request returns (a workout)
+
+
+def hr_seconds(q):
+    """The heart rate of every second between start and end (s, at most 6 hours), for the chart of a workout: read
+    when the workout is opened, never kept in the day's results. {"start": s, "values": [bpm or null, ...]}."""
+    try:
+        start, end = int(q.get("start", [""])[0]), int(q.get("end", [""])[0])
+    except ValueError:
+        raise UserError("err.interval_invalid") from None
+    if not (0 < start < end <= start + HR_SECONDS_MAX_S):
+        raise UserError("err.interval_invalid")
+    with closing(connect()) as con:
+        rows = sec_series(con, start, end)
+    values = [None] * (end - start)
+    for t, v in rows:
+        values[t - start] = v
+    return {"start": start, "values": values if rows else []}
 
 
 def history(con, d, n):
@@ -2422,6 +2668,23 @@ SOURCES = {
     "aasm": {"title": "American Academy of Sleep Medicine, Scoring Manual FAQ",
             "url": "https://aasm.org/scoring-manual-faq-scoring-hypopneas",
             "kind": "definition", "coi": "not_declared"},
+    # heart rate recovery at 60 s (checked on 4 November 2026)
+    "cole_hrr": {"title": "Cole et al. 1999, N Engl J Med",
+                 "url": "https://pubmed.ncbi.nlm.nih.gov/10536127/",
+                 "kind": "cohort", "coi": "not_declared"},
+    "qiu_hrr": {"title": "Qiu et al. 2017, J Am Heart Assoc",
+                "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5524096/",
+                "kind": "meta_analysis", "coi": "none"},
+    "fecchio_hrr": {"title": "Fecchio et al. 2019, Auton Neurosci",
+                    "url": "https://doi.org/10.1016/j.autneu.2019.102582",
+                    "kind": "systematic_review", "coi": "not_declared"},
+    # SDNN measured by an optical sensor (checked on 4 November 2026)
+    "xu_prv": {"title": "Xu et al. 2026, Sensors",
+               "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13517957/",
+               "kind": "meta_analysis", "coi": "none"},
+    "nunan_hrv": {"title": "Nunan et al. 2010, Pacing Clin Electrophysiol",
+                  "url": "https://doi.org/10.1111/j.1540-8159.2010.02841.x",
+                  "kind": "systematic_review", "coi": "not_declared"},
     "ais_hrv": {"title": "Australian Institute of Sport 2023",
                "url": "https://www.ais.gov.au/__data/assets/pdf_file/0013/1130260/HRV-BPG_FINAL.pdf",
                "kind": "guideline", "coi": "none"},
@@ -2901,7 +3164,7 @@ def summary(d):
         "steps": day["steps"], "steps_band": day["steps_band"], "jumps": day["jumps"], "distance_km": day["distance_km"],
         "active_min": day["active_min"], "active_steps": day["active_steps"],
         "kcal": day["kcal"],
-        "zones": day["zones"],
+        "zones": day["zones"], "zones_sec_min": day.get("zones_sec_min", 0), "hr_minutes": day.get("hr_minutes", 0),
         "zone_bounds": [round(p["hrmax"] * x) for x in ZONE_PCT],
         "zone_minutes": day["zone_minutes"], "zone_minutes_week": week_zone,
         "hr": {
@@ -2916,11 +3179,15 @@ def summary(d):
         "hour_labels": [datetime.fromtimestamp(t, TZ).hour for t in hour_starts],
         "workouts": day["sessions"],
         "trainings": day["trainings"],
+        # recovery at 60 s of the workouts of the last 4 weeks: the page compares a workout with the person's own values
+        "hrr_recent": [[t["start"], t["hrr60"]["value"]] for x in hist for t in x["trainings"] if t.get("hrr60")],
+        "hrr_sources": src("cole_hrr", "qiu_hrr", "fecchio_hrr"),
         "activity_types": [{"key": k, "name": v[0], "load": k in LOAD_TYPES} for k, v in ACTIVITY_TYPES.items()],
         "strength_day_loads": {str(n): strength_day_load(n) for n in (1, 2, 3)},  # default added load of each strength day
         "plan": plan_for(d),
         "sleep": sleep,
         "hrv": {"night": sleep["hrv"] if sleep else None, "day": rnd(mean(hrv_day))} if (hrv_day or sleep) else None,
+        "sdnn_sources": src("xu_prv", "nunan_hrv"),
         "stress": stress,
         "spo2": spo2 if spo2 and spo2["avg"] is not None else None,
         "pai": pai,
@@ -5119,6 +5386,10 @@ def parse_iso(v):
 
 HINTS = ("day_complete",)  # usage hints shown only until first used, then an (i) icon
 # local reminders of the Android app (HelioReminders reads them from settings.json): off until the user turns one on
+# how many days Gadgetbridge keeps the heart rate of every second (None: always); before the seconds of a day go, their
+# results are saved in Ritmo's data (seconds-YYYY.json, see seconds_retention)
+SECONDS_KEEP = (30, 90, 365, None)
+SECONDS_KEEP_DEFAULT = 90
 REMINDER_DEFAULTS = {"day": {"on": False, "time": "21:30"},
                      "weigh": {"on": False, "time": "07:30", "days": [1, 2, 3, 4, 5, 6, 7]}}
 TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
@@ -5164,13 +5435,18 @@ def settings_load():
     s = state_load("settings.json")
     hints = s.get("hints") if isinstance(s.get("hints"), list) else []
     return {"lang": s.get("lang") if s.get("lang") in LANGS else None, "hints": [x for x in HINTS if x in hints],
-            "save_mine": s.get("save_mine") is True, "reminders": reminders_clean(s.get("reminders"))}
+            "save_mine": s.get("save_mine") is True, "reminders": reminders_clean(s.get("reminders")),
+            "hr_seconds_keep": s["hr_seconds_keep"] if "hr_seconds_keep" in s and s["hr_seconds_keep"] in SECONDS_KEEP
+            and not isinstance(s["hr_seconds_keep"], bool) else SECONDS_KEEP_DEFAULT}
 
 
 def save_settings(body):
     """Only the fields sent change: "lang" (None = system language), "hint" (a usage hint now used), "save_mine"
-    (the box "Save also to my foods" of the community products, remembered), "reminders" (both rules)."""
-    if not {"lang", "hint", "save_mine", "reminders"} & set(body):
+    (the box "Save also to my foods" of the community products, remembered), "reminders" (both rules),
+    "hr_seconds_keep" (days of heart rate every second kept by Gadgetbridge: 30, 90, 365 or None = always)."""
+    if not {"lang", "hint", "save_mine", "reminders", "hr_seconds_keep"} & set(body):
+        raise UserError("e.value_invalid")
+    if "hr_seconds_keep" in body and (body["hr_seconds_keep"] not in SECONDS_KEEP or isinstance(body["hr_seconds_keep"], bool)):
         raise UserError("e.value_invalid")
     reminders = reminders_check(body["reminders"]) if "reminders" in body else None
     if "save_mine" in body and not isinstance(body["save_mine"], bool):
@@ -5190,6 +5466,8 @@ def save_settings(body):
             s["save_mine"] = body["save_mine"]
         if reminders is not None:
             s["reminders"] = reminders
+        if "hr_seconds_keep" in body:
+            s["hr_seconds_keep"] = body["hr_seconds_keep"]
         state_save("settings.json", s)
     return {"ok": True, **settings_load()}
 
@@ -5287,6 +5565,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, summary(parse_day(q, "date")))
             if u.path == "/api/settings":
                 return self._json(200, settings_load())
+            if u.path == "/api/seconds":
+                return self._json(200, hr_seconds(q))
             if u.path == "/api/trends":
                 return self._json(200, trends(parse_day(q, "end")))
             if u.path == "/api/vitals":

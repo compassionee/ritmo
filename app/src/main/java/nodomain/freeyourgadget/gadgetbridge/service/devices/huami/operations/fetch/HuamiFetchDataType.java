@@ -34,6 +34,14 @@ public enum HuamiFetchDataType {
     MAX_HEART_RATE(0x3d),
     SLEEP_SESSION(0x48),
     HRV(0x49),
+    SHRV_SDNN(0x4e),
+    SEC_HR_V2(0x57),
+    // Not parsed: only requested by the capture mode of the Helio build (FetchCaptureOperation), saved raw
+    SPO2_OSA_EVENT(0x27),
+    BODY_BATTERY(0x43),
+    RECOVERY_HEART_RATE(0x46),
+    SEC_HR(0x4c),
+    REST_HR(0x56),
     ;
 
     private final byte code;

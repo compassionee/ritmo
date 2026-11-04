@@ -512,7 +512,8 @@ function renderFitness(d, td) {
     const bar = h("div", "ztrack", null, row); const f = h("div", `z${i}`, null, bar); f.style.width = `${(100 * m) / zmax}%`;
     h("span", "zmin", fmtDur(m), row);
   });
-  $("hrmaxLabel").textContent = t("fit.zones_note", { hrmax: d.profile.hrmax, how: hrmaxText(d.profile) });
+  $("hrmaxLabel").textContent = t("fit.zones_note", { hrmax: d.profile.hrmax, how: hrmaxText(d.profile) })
+    + (d.zones_sec_min ? ` ${secondsText(d.hr_minutes, d.zones_sec_min)}` : "");
   sourcesFold($("hrmaxSrc"), d.hrmax_sources);
   renderVo2(d.vo2max);
 
@@ -682,12 +683,53 @@ function fillWorkout(det, w, d) {
   if (w.segments && w.segments.length) h("small", "w-method", t("fit.segments_note", { n: w.segments.length }), det);
   const chart = h("div", "chart", null, det);
   lineChart(chart, w.hr, w.start, w.end, { h: 110, gap: 300 });
-  const zt = w.zones.reduce((a, b) => a + b, 0);
+  if (w.zones_sec_min) secondsChart(chart, w, d);
+  if (w.hrr60) recoveryNote(det, w, d);
+  // the minutes below the lowest zone too: the bar adds up to the workout's minutes with a heart rate
+  const below = w.zone_below || 0;
+  const zt = w.zones.reduce((a, b) => a + b, 0) + below;
   if (!zt) return;
+  if (w.zones_sec_min) h("small", "w-method", secondsText(zt, w.zones_sec_min), det);
+  const parts = [[below, "zb", t("zone.below")], ...w.zones.map((m, i) => [m, `z${i}`, t(`zone.${i}`)])];
   const zs = h("div", "zstack", null, det);
-  w.zones.forEach((m, i) => { if (m) { const z = h("div", `z${i}`, null, zs); z.style.width = `${(100 * m) / zt}%`; } });
+  parts.forEach(([m, cls]) => { if (m) { const z = h("div", cls, null, zs); z.style.width = `${(100 * m) / zt}%`; } });
   const lg = h("div", "legend", null, det);
-  w.zones.forEach((m, i) => { if (m) { const s = h("span", null, null, lg); h("i", `sw z${i}`, null, s); s.append(`${t(`zone.${i}`)} `); h("b", null, `${m}′`, s); } });
+  parts.forEach(([m, cls, name]) => { if (m) { const s = h("span", null, null, lg); h("i", `sw ${cls}`, null, s); s.append(`${name} `); h("b", null, `${m}′`, s); } });
+}
+
+// "52 minutes split by the heart rate of every second", or, when some minutes have only their minute value,
+// "54 minutes with heart rate, 52 of them from the seconds"
+function secondsText(total, fromSeconds) {
+  return total && total !== fromSeconds ? t("fit.zones_sec_of", { n: total, m: fromSeconds }) : t("fit.zones_sec", { n: fromSeconds });
+}
+// the heart rate of every second (Helio Strap): read when the workout is opened, until the minute after its end (and
+// after the recovery, which can be earlier: at the end of the skipping rope)
+async function secondsChart(box, w, d) {
+  const end = Math.max(w.end + 60, w.hrr60 ? w.hrr60.at + 70 : 0);
+  try {
+    const r = await getJson(`/api/seconds?start=${w.start}&end=${end}`);
+    const pts = r.values.map((v, i) => [r.start + i, v]).filter((p) => p[1] != null);
+    if (pts.length) lineChart(box, pts, w.start, end, { h: 110, gap: 10 });
+  } catch (e) { /* the minute chart stays */ }
+}
+function recoveryNote(det, w, d) {
+  const r = w.hrr60;
+  const box = h("div", "w-hrr", null, det);
+  h("b", null, t("fit.hrr", { v: r.value, a: r.end_hr, b: r.hr60 }), box);
+  // measured at the end of the last intense part when the session went on walking after it
+  if (r.after === "rope") h("small", null, t("fit.hrr_after_rope", { time: fmtTime(r.at) }), box);
+  // compared only with the person's own workouts: the published thresholds come from exercise tests, not from these
+  const others = (d.hrr_recent || []).filter(([s]) => s !== w.start).map(([, v]) => v).sort((a, b) => a - b);
+  if (others.length >= 3) {
+    const m = others.length % 2 ? others[(others.length - 1) / 2] : (others[others.length / 2 - 1] + others[others.length / 2]) / 2;
+    h("small", null, t("fit.hrr_own", { n: others.length, v: Math.round(m) }), box);
+  }
+  if (r.active) h("small", null, t("fit.hrr_active"), box);
+  const more = h("details", "more", null, box);
+  more.dataset.more = "fit_hrr";
+  h("summary", null, t("more.title"), more);
+  h("p", "note", t("fit.hrr_note"), more);
+  sourcesFold(h("div", null, null, more), d.hrr_sources);
 }
 
 /* ================= SLEEP ================= */
@@ -729,6 +771,12 @@ function renderSleep(d, td) {
   $("sleepHrSub").textContent = sl && sl.min_hr ? t("sleep.hr_sub", { min: sl.min_hr }) : t("ui.sleep.average_bpm");
   const hb = d.baselines && d.baselines.hrv;
   const hrvN = sl && sl.hrv != null ? sl.hrv : d.hrv && d.hrv.night;
+  // SDNN computed by the band: only the measurement, never judged (no independent reference for it, see the note)
+  const sd = sl && sl.sdnn;
+  $("sdnnCard").hidden = !sd;
+  $("sdnnValue").textContent = sd ?? "–";
+  $("sdnnSub").textContent = sd ? t("sleep.sdnn_sub", { n: sl.sdnn_n }) : "";
+  sourcesFold($("sdnnSrc"), sd ? d.sdnn_sources : []);
   $("hrvValue").textContent = hrvN ?? "–";
   $("hrvSub").textContent = hrvN == null ? t("common.no_data_lc") : hb && hb.mean != null ? t("sleep.hrv_band", { lo: hb.low, hi: hb.high }) : t("sleep.hrv_median");
   $("respValue").textContent = sl && sl.resp != null ? fmtDec(sl.resp) : "–";
@@ -2377,10 +2425,11 @@ function renderAll() {
   renderSync(S); renderToday(S); renderWeek(WEEK); renderFitness(S, T); renderStrength(STRW); renderSleep(S, T); renderHealth(S, T, V);
   renderProfile(S); renderPlanCard(PLAN); renderWeightCard(WEIGHT); renderFood(NUT, FOODS); renderCum(NUT && FOODS ? CUM : null);
   renderCatalog(CATALOG);
-  if (!$("aboutSheet").hidden) renderAbout();
+  if (!$("aboutSheet").hidden) { renderAbout(); renderCapture(); }
   if (BAND) renderBand(BAND);
   if (backupWas) renderBackup(backupWas);
   renderReminders();
+  renderSecondsKeep();
 }
 
 /* ================= food database (Profile) ================= */
@@ -2428,7 +2477,7 @@ window.helioCatalogImported = (r) => {
 let removeArmed = false;
 // a long operation of the app (HelioTaskReporter): {task, phase, percent?, end, ok}. The page stays usable meanwhile:
 // those operations never hold up its requests
-const TASKS = ["catalog_import", "export", "import", "csv", "backup"];
+const TASKS = ["catalog_import", "export", "import", "csv", "backup", "capture"];
 const TASK_PHASES = ["start", "copy", "unpack", "check", "run"];
 window.helioTask = (e) => {
   if (!e || !TASKS.includes(e.task) || !TASK_PHASES.includes(e.phase)) return;
@@ -2519,6 +2568,23 @@ $("backupNow").addEventListener("click", () => backupAction("backup_now"));
 $("backupFolder").addEventListener("click", () => backupAction("backup_folder"));
 $("backupOff").addEventListener("click", () => backupAction("backup_off"));
 $("backupEvery").addEventListener("change", () => backupAction(`backup_${$("backupEvery").value}`));
+
+/* ================= heart rate of every second: how long Gadgetbridge keeps it (only in the app) ================= */
+function renderSecondsKeep() {
+  $("secondsCard").hidden = !ANDROID;
+  if (!ANDROID) return;
+  const k = SETTINGS && "hr_seconds_keep" in SETTINGS ? SETTINGS.hr_seconds_keep : 90;
+  $("secondsKeep").value = k == null ? "always" : String(k);
+}
+$("secondsKeep").addEventListener("change", async () => {
+  const v = $("secondsKeep").value;
+  $("secondsErr").hidden = true;
+  try {
+    SETTINGS.hr_seconds_keep = (await postJson("/api/settings", { hr_seconds_keep: v === "always" ? null : Number(v) })).hr_seconds_keep;
+    toast(t("secs.saved"));
+  } catch (e) { showErr("secondsErr", e.message); }
+  renderSecondsKeep();
+});
 
 /* ================= reminders (only in the Android app: HelioReminders) ================= */
 // The rules are in settings.json (saved by Python, read by Java when an alarm goes off); Java answers with the
@@ -2612,6 +2678,56 @@ $("remWeighTime").addEventListener("change", () => {
 $("remAllow").addEventListener("click", () => postJson("/api/android/action", { action: "reminders" }).catch((e) => showErr("remErr", e.message)));
 $("remSettings").addEventListener("click", () => postJson("/api/android/action", { action: "notif_settings" }).catch((e) => showErr("remErr", e.message)));
 
+/* ================= capture mode (About; only in personal test builds of the app: FetchCaptureOperation) ======== */
+// Raw answers of the band to the fetch types not handled yet, saved privately by Gadgetbridge during the sync; the
+// page only shows what was captured and sends the actions. Hidden unless the app says the build has it.
+let CAPTURE = null;
+const CAP_OUTCOMES = ["data", "empty", "rejected", "invalid", "no_answer", "skipped", "full"];
+function renderCapture() {
+  const c = CAPTURE;
+  $("captureBox").hidden = !(ANDROID && c && c.available === true);
+  if ($("captureBox").hidden) return;
+  $("capOn").checked = c.on === true;
+  $("capSummary").textContent = t("cap.summary", { n: c.files || 0, kb: Math.ceil((c.bytes || 0) / 1024) });
+  const ul = $("capTypes"); ul.replaceChildren();
+  for (const x of c.types || []) {
+    const li = h("li", null, null, ul);
+    h("b", null, `0x${x.code} ${x.name}`, li);
+    const last = x.last;
+    const outcome = last && CAP_OUTCOMES.includes(last.outcome) ? last.outcome : null;
+    h("small", null, outcome ? t("cap.last", { what: t(`cap.outcome.${outcome}`), when: bandWhen(last.at), kb: (last.bytes || 0) / 1024 })
+      : t("cap.never"), li);
+    const counts = CAP_OUTCOMES.filter((k) => x.counts && x.counts[k]).map((k) => `${t(`cap.outcome.${k}`)} ${x.counts[k]}`);
+    if (counts.length) h("small", null, counts.join(" · "), li);
+  }
+  $("capClear").disabled = !c.files && !(c.types || []).some((x) => x.last);
+}
+window.helioCapture = (c) => {
+  if (!c || typeof c !== "object") return;
+  CAPTURE = c;
+  renderCapture();
+};
+async function loadCapture() {
+  if (!ANDROID) return;
+  try { window.helioCapture(await getJson("/api/android/capture")); } catch (e) { /* not in this build */ }
+}
+async function captureAction(action) {
+  try { await postJson("/api/android/action", { action }); } catch (e) { toast(t("err.failed", { msg: e.message }), true); }
+}
+$("capOn").addEventListener("change", () => captureAction($("capOn").checked ? "capture_on" : "capture_off"));
+$("capExport").addEventListener("click", () => captureAction("capture_export"));
+let capClearArmed = false;
+$("capClear").addEventListener("click", () => {
+  // two taps, like removing the products: the captures cannot come back
+  if (!capClearArmed) {
+    capClearArmed = true; $("capClear").textContent = t("cat.remove_confirm");
+    setTimeout(() => { capClearArmed = false; $("capClear").textContent = t("cap.clear"); }, 4000);
+    return;
+  }
+  capClearArmed = false; $("capClear").textContent = t("cap.clear");
+  captureAction("capture_clear");
+});
+
 /* ================= About: licences and attributions ================= */
 const ABOUT_SOFTWARE = [
   ["Gadgetbridge", "AGPL-3.0-or-later", "https://codeberg.org/Freeyourgadget/Gadgetbridge"],
@@ -2629,6 +2745,7 @@ function extLink(parent, href, text) {
 async function openAbout() {
   if (!CATALOG) await loadCatalog();
   renderAbout();
+  loadCapture();
   openModal("aboutSheet");
 }
 function renderAbout() {
@@ -3014,6 +3131,7 @@ async function start() {
   loadCatalog();
   loadBackup();
   loadReminders();
+  renderSecondsKeep();
 }
 bootMark("page.js_start", BOOT_JS_START, BOOT_JS_START);
 bootMark("page.intl", BOOT_INTL_START, BOOT_INTL_END);

@@ -80,10 +80,12 @@ class SleepUI(UIBase):
         for width in (360, 412):
             self.page.set_viewport_size({"width": width, "height": 800})
             self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), width, width)
-            for d in self.page.locator("#tab-sleep details.more").all():
+            # (those of a hidden card, such as SDNN without band measurements, are skipped)
+            shown = [d for d in self.page.locator("#tab-sleep details.more").all() if d.is_visible()]
+            for d in shown:
                 d.locator("> summary").click()
             self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), width, width)
-            for d in self.page.locator("#tab-sleep details.more").all():
+            for d in shown:
                 d.locator("> summary").click()
 
 

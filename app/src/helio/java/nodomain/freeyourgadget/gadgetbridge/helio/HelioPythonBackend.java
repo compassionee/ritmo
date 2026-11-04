@@ -42,6 +42,7 @@ import java.util.TimeZone;
 
 import nodomain.freeyourgadget.gadgetbridge.BuildConfig;
 import nodomain.freeyourgadget.gadgetbridge.GBDatabase;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.HelioSecondsRetention;
 
 /**
  * Runs Helio in Python (Chaquopy), in the :helio process. Python is started on the first request.
@@ -204,6 +205,23 @@ public class HelioPythonBackend implements HelioBackend {
     public String importCatalog(@NonNull final File packageFile, @NonNull final HelioProgress progress) {
         return bridge().callAttr("catalog_import", packageFile.getAbsolutePath(),
                 java.util.Locale.getDefault().getLanguage(), progress).toString();
+    }
+
+    /**
+     * Saves the results of the heart rate seconds that may be pruned, then writes up to where Gadgetbridge may delete
+     * them ({@link HelioSecondsRetention#FILE}). Returns a JSON summary.
+     */
+    @NonNull
+    public String prepareSecondsRetention() {
+        return bridge().callAttr("seconds_retention",
+                new File(context.getFilesDir(), HelioSecondsRetention.FILE).getAbsolutePath()).toString();
+    }
+
+    /**
+     * The capture folder (personal test builds, -PhelioCapture=true) as a .tgz in out; returns how many files went in.
+     */
+    public int captureArchive(@NonNull final File captureDir, @NonNull final File out) {
+        return bridge().callAttr("capture_archive", captureDir.getAbsolutePath(), out.getAbsolutePath()).toInt();
     }
 
     @NonNull

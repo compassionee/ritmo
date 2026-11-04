@@ -206,6 +206,8 @@
       <div class="card stat"><span class="tag t-spo2" data-i18n="ui.sleep.breathing"></span><b id="respValue">–</b><small data-i18n="ui.sleep.breaths_per_minute"></small></div>
       <div class="card stat"><span class="tag t-spo2" data-i18n="ui.sleep.spo2"></span><b id="sleepSpo2">–</b><small id="sleepSpo2Sub">–</small></div>
       <div class="card stat"><span class="tag t-kcal" data-i18n="ui.sleep.wrist_temp"></span><b id="sleepTemp">–</b><small data-i18n="ui.sleep.night_average"></small></div>
+      <div class="card stat" id="sdnnCard" hidden><span class="tag t-hrv" data-i18n="sleep.sdnn"></span><b id="sdnnValue">–</b><small id="sdnnSub"></small>
+        <details class="more" data-more="sleep_sdnn"><summary data-i18n="more.title"></summary><p class="note" data-i18n="sleep.sdnn_note"></p><div id="sdnnSrc"></div></details></div>
     </div>
 
     <div class="card">
@@ -437,6 +439,14 @@
       <div class="export-btns"><button class="w-btn ghost" id="backupNow" data-i18n="backup.now"></button><button class="w-btn ghost" id="backupFolder" data-i18n="backup.choose"></button><button class="w-btn ghost" id="backupOff" data-i18n="backup.stop"></button></div>
       <details class="more" data-more="prof_backup"><summary data-i18n="more.title"></summary><p class="note" data-i18n="backup.note"></p></details>
     </div>
+    <div class="card" id="secondsCard" hidden>
+      <h3 class="card-title" data-i18n="secs.title"></h3>
+      <label class="sheet-row"><span data-i18n="secs.keep"></span><select id="secondsKeep">
+        <option value="30" data-i18n="secs.keep.30"></option><option value="90" data-i18n="secs.keep.90"></option>
+        <option value="365" data-i18n="secs.keep.365"></option><option value="always" data-i18n="secs.keep.always"></option></select></label>
+      <p class="error" id="secondsErr" hidden></p>
+      <details class="more" data-more="prof_seconds"><summary data-i18n="more.title"></summary><p class="note" data-i18n="secs.note"></p></details>
+    </div>
     <div class="card" id="remindCard" hidden>
       <h3 class="card-title" data-i18n="rem.title"></h3>
       <label class="check-row"><input type="checkbox" id="remDayOn"> <span data-i18n="rem.day"></span></label>
@@ -483,6 +493,13 @@
       <p class="note" data-i18n="boot.note"></p>
       <ol class="boot-list" id="bootList"></ol>
       <button class="w-btn ghost" id="bootCopy" data-i18n="boot.copy"></button></details>
+    <details class="more" id="captureBox" data-more="about_capture" hidden><summary data-i18n="cap.title"></summary>
+      <p class="note" data-i18n="cap.note"></p>
+      <label class="check-row"><input type="checkbox" id="capOn"> <span data-i18n="cap.on"></span></label>
+      <p class="muted" id="capSummary"></p>
+      <ol class="boot-list" id="capTypes"></ol>
+      <div class="export-btns"><button class="w-btn ghost" id="capExport" data-i18n="cap.export"></button><button class="w-btn ghost" id="capClear" data-i18n="cap.clear"></button></div>
+    </details>
   </div>
 </div>
 

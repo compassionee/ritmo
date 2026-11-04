@@ -46,6 +46,8 @@ import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSpec
 import nodomain.freeyourgadget.gadgetbridge.capabilities.password.PasswordCapabilityImpl;
 import nodomain.freeyourgadget.gadgetbridge.devices.AbstractBLEDeviceCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.ComputedHrvSummarySampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.GenericHeartRateSampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.GenericHrvSdnnSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.GenericHrvValueSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.GenericTemperatureSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.HuamiHeartRateManualSampleProvider;
@@ -70,6 +72,8 @@ import nodomain.freeyourgadget.gadgetbridge.entities.AudioRecordingDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.DeviceMusicFileDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.BaseActivitySummaryDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
+import nodomain.freeyourgadget.gadgetbridge.entities.GenericHeartRateSampleDao;
+import nodomain.freeyourgadget.gadgetbridge.entities.GenericHrvSdnnSampleDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.GenericHrvValueSampleDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.GenericTemperatureSampleDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.HuamiExtendedActivitySampleDao;
@@ -130,6 +134,8 @@ public abstract class HuamiCoordinator extends AbstractBLEDeviceCoordinator {
             put(session.getHuamiPaiSampleDao(), HuamiPaiSampleDao.Properties.DeviceId);
             put(session.getHuamiSleepRespiratoryRateSampleDao(), HuamiSleepRespiratoryRateSampleDao.Properties.DeviceId);
             put(session.getGenericHrvValueSampleDao(), GenericHrvValueSampleDao.Properties.DeviceId);
+            put(session.getGenericHrvSdnnSampleDao(), GenericHrvSdnnSampleDao.Properties.DeviceId);
+            put(session.getGenericHeartRateSampleDao(), GenericHeartRateSampleDao.Properties.DeviceId);
             put(session.getGenericTemperatureSampleDao(), GenericTemperatureSampleDao.Properties.DeviceId);
             put(session.getHuamiSleepSessionSampleDao(), HuamiSleepSessionSampleDao.Properties.DeviceId);
             put(session.getBaseActivitySummaryDao(), BaseActivitySummaryDao.Properties.DeviceId);
@@ -241,6 +247,26 @@ public abstract class HuamiCoordinator extends AbstractBLEDeviceCoordinator {
     @Override
     public GenericHrvValueSampleProvider getHrvValueSampleProvider(GBDevice device, DaoSession session) {
         return new GenericHrvValueSampleProvider(device, session);
+    }
+
+    /** SDNN measured by the device (fetch type 0x4e), when {@link #supportsHrvSdnn} says so. */
+    public GenericHrvSdnnSampleProvider getHrvSdnnSampleProvider(final GBDevice device, final DaoSession session) {
+        return new GenericHrvSdnnSampleProvider(device, session);
+    }
+
+    /** Heart rate every second (fetch type 0x57), when {@link #supportsHeartRateSeconds} says so. */
+    public GenericHeartRateSampleProvider getHeartRateSecondsSampleProvider(final GBDevice device, final DaoSession session) {
+        return new GenericHeartRateSampleProvider(device, session);
+    }
+
+    /** Whether the device keeps SDNN records (fetch type 0x4e). */
+    public boolean supportsHrvSdnn(@NonNull final GBDevice device) {
+        return false;
+    }
+
+    /** Whether the device keeps a heart rate every second (fetch type 0x57). */
+    public boolean supportsHeartRateSeconds(@NonNull final GBDevice device) {
+        return false;
     }
 
     @Override

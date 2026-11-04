@@ -80,7 +80,7 @@ public abstract class AbstractRepeatingFetchOperation extends AbstractFetchOpera
             return false;
         }
 
-        timestamp.add(Calendar.MINUTE, 1);
+        advanceLastSyncTimestamp(timestamp);
         saveLastSyncTimestamp(timestamp);
 
         if (needsAnotherFetch(timestamp)) {
@@ -90,6 +90,13 @@ public abstract class AbstractRepeatingFetchOperation extends AbstractFetchOpera
         }
 
         return true;
+    }
+
+    /**
+     * Where the next fetch starts, from the timestamp left by {@link #handleActivityData}: one minute later by default.
+     */
+    protected void advanceLastSyncTimestamp(final GregorianCalendar timestamp) {
+        timestamp.add(Calendar.MINUTE, 1);
     }
 
     private boolean needsAnotherFetch(final GregorianCalendar lastSyncTimestamp) {

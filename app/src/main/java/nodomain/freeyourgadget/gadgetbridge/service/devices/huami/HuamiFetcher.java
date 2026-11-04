@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.devices.DeviceCoordinator;
+import nodomain.freeyourgadget.gadgetbridge.devices.huami.HuamiCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.RecordedDataTypes;
 import nodomain.freeyourgadget.gadgetbridge.service.SleepAsAndroidSender;
@@ -20,7 +21,12 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fet
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchHeartRateManualOperation;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchHeartRateMaxOperation;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchHeartRateRestingOperation;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchCaptureOperation;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchHeartRateSecondsOperation;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchHrvOperation;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchHrvSdnnOperation;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.HelioCaptureStore;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.HuamiFetchDataType;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchPaiOperation;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchSleepRespiratoryRateOperation;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.operations.fetch.FetchSleepSessionOperation;
@@ -84,10 +90,20 @@ public class HuamiFetcher {
             this.fetchOperationQueue.add(new FetchHrvOperation(this));
         }
 
+        if ((dataTypes & RecordedDataTypes.TYPE_HRV) != 0 && coordinator instanceof HuamiCoordinator
+                && ((HuamiCoordinator) coordinator).supportsHrvSdnn(gbDevice)) {
+            this.fetchOperationQueue.add(new FetchHrvSdnnOperation(this));
+        }
+
         if ((dataTypes & RecordedDataTypes.TYPE_HEART_RATE) != 0 && coordinator.supportsHeartRateStats(gbDevice)) {
             this.fetchOperationQueue.add(new FetchHeartRateManualOperation(this));
             this.fetchOperationQueue.add(new FetchHeartRateMaxOperation(this));
             this.fetchOperationQueue.add(new FetchHeartRateRestingOperation(this));
+        }
+
+        if ((dataTypes & RecordedDataTypes.TYPE_HEART_RATE) != 0 && coordinator instanceof HuamiCoordinator
+                && ((HuamiCoordinator) coordinator).supportsHeartRateSeconds(gbDevice)) {
+            this.fetchOperationQueue.add(new FetchHeartRateSecondsOperation(this));
         }
 
         if ((dataTypes & RecordedDataTypes.TYPE_SLEEP_RESPIRATORY_RATE) != 0 && coordinator.supportsSleepRespiratoryRate(gbDevice)) {
@@ -104,6 +120,15 @@ public class HuamiFetcher {
 
         if ((dataTypes & RecordedDataTypes.TYPE_HUAMI_STATISTICS) != 0) {
             this.fetchOperationQueue.add(new FetchStatisticsOperation(this));
+        }
+
+        // Helio build, capture mode: after the normal sync, the types not handled yet, saved raw (FetchCaptureOperation)
+        if ((dataTypes & RecordedDataTypes.TYPE_ACTIVITY) != 0 && FetchCaptureOperation.wanted(getContext(), coordinator)) {
+            final HelioCaptureStore store = HelioCaptureStore.of(getContext());
+            final FetchCaptureOperation.Session session = new FetchCaptureOperation.Session();
+            for (final HuamiFetchDataType type : HelioCaptureStore.TYPES) {
+                this.fetchOperationQueue.add(new FetchCaptureOperation(this, type, store, session));
+            }
         }
 
         if (currentOperation == null) {

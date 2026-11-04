@@ -2,7 +2,8 @@
 
 Archive content:
     helio-export.json      format, version, date, SHA-256 hashes of the files and profile
-    state/<name>.json      the files of the HELIO_STATE folder (labels, plan, weight, strength, foods, diary, settings)
+    state/<name>.json      the files of the HELIO_STATE folder (labels, plan, weight, strength, foods, diary, settings,
+                           results of the pruned heart rate of every second)
 
 The profile contains only measurements and goals (PROFILE_KEYS): never passwords, certificates,
 addresses or paths.
@@ -28,7 +29,7 @@ from pathlib import Path
 FORMAT = "helio-state"
 VERSION = 1
 MANIFEST = "helio-export.json"
-STATE_RE = re.compile(r"^(?:labels|plan|strength|weights|foods|nutrition|profile|settings|diary-\d{4}-\d{2})\.json$")
+STATE_RE = re.compile(r"^(?:labels|plan|strength|weights|foods|nutrition|profile|settings|diary-\d{4}-\d{2}|seconds-\d{4})\.json$")
 MAX_FILE = 8 * 1024 * 1024
 MAX_TOTAL = 64 * 1024 * 1024
 MAX_FILES = 1000
